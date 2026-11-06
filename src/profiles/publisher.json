@@ -1,0 +1,20 @@
+{
+  "python": {
+    "cpu": {
+      "json": { "a": 25, "b": 25 },
+      "protobuf": { "a": 15, "b": 7 }
+    },
+    "baseMiB": { "low": 30, "high": 100 },
+    "connectionKiB": { "low": 32, "high": 160 },
+    "messageOverheadBytes": { "low": 128, "high": 512 }
+  },
+  "cpp": {
+    "cpu": {
+      "json": { "a": 8, "b": 12 },
+      "protobuf": { "a": 4, "b": 4 }
+    },
+    "baseMiB": { "low": 5, "high": 30 },
+    "connectionKiB": { "low": 24, "high": 128 },
+    "messageOverheadBytes": { "low": 64, "high": 256 }
+  }
+}

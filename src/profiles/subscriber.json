@@ -1,0 +1,29 @@
+{
+  "java": {
+    "cpu": {
+      "json": { "a": 20, "b": 18 },
+      "protobuf": { "a": 12, "b": 6 }
+    },
+    "baseMiB": { "low": 256, "high": 600 },
+    "connectionKiB": { "low": 64, "high": 256 },
+    "messageOverheadBytes": { "low": 128, "high": 512 }
+  },
+  "python": {
+    "cpu": {
+      "json": { "a": 30, "b": 26 },
+      "protobuf": { "a": 18, "b": 8 }
+    },
+    "baseMiB": { "low": 30, "high": 120 },
+    "connectionKiB": { "low": 32, "high": 160 },
+    "messageOverheadBytes": { "low": 128, "high": 512 }
+  },
+  "cpp": {
+    "cpu": {
+      "json": { "a": 8, "b": 11 },
+      "protobuf": { "a": 5, "b": 4 }
+    },
+    "baseMiB": { "low": 10, "high": 60 },
+    "connectionKiB": { "low": 24, "high": 128 },
+    "messageOverheadBytes": { "low": 64, "high": 256 }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "configVersion": "1.0.0",
+  "hwm": 1000,
+  "queueWindowSeconds": 1,
+  "cpuOptimisticFactor": 0.5,
+  "cpuNominalFactor": 1,
+  "cpuConservativeFactor": 3,
+  "singleThreadWarningThreshold": 0.7,
+  "largeMessageWarningBytes": 65536,
+  "highMessageRateWarningMsgPerSecond": 100000,
+  "largePublisherCountWarning": 1000
+}

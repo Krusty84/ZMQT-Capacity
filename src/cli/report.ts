@@ -1,0 +1,121 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Alexey Sedoykin
+ * SPDX-License-Identifier: MIT
+ */
+
+import type {
+  CapacityEstimate,
+  CpuEstimate,
+  MemoryEstimate,
+  WarningCode,
+} from "../models/result.js";
+
+const warningMessages: Record<WarningCode, string> = {
+  UNVALIDATED_COEFFICIENTS:
+    "The coefficients are based on engineering assumptions.",
+  CPU_SINGLE_THREAD_RISK: "Sequential processing can limit throughput.",
+  CPU_DEMAND_EXCEEDS_ONE_CORE:
+    "The nominal CPU estimate reaches or exceeds the capacity of one core.",
+  CPU_CONSERVATIVE_DEMAND_EXCEEDS_ONE_CORE:
+    "The high CPU estimate reaches or exceeds the capacity of one core.",
+  OFFERED_LOAD_EXCEEDS_CAPACITY:
+    "The incoming message rate exceeds the estimated throughput of the handler.",
+  HIGH_MESSAGE_RATE: "High total message rate.",
+  LARGE_MESSAGE_SIZE: "Large message size.",
+  LARGE_PUBLISHER_COUNT: "Large publisher count.",
+  POTENTIAL_PUBSUB_MESSAGE_LOSS: "PUB/SUB can lose messages.",
+  KERNEL_MEMORY_NOT_INCLUDED:
+    "The RAM estimate excludes kernel network buffers.",
+  HWM_NOT_HARD_RSS_LIMIT: "Actual RAM use can exceed the estimate at HWM.",
+};
+
+const decimal = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 6 });
+const scientific = new Intl.NumberFormat("ru-RU", {
+  notation: "scientific",
+  maximumFractionDigits: 3,
+});
+const memory = new Intl.NumberFormat("ru-RU", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatNumber(value: number): string {
+  const useScientific = (value > 0 && value < 1e-6) || value >= 1e9;
+  return (useScientific ? scientific : decimal).format(value).replace(",", ".");
+}
+
+function formatMemory(value: number): string {
+  return memory.format(value).replace(",", ".");
+}
+
+function scenarios(values: number[], format = formatNumber): string {
+  return values.map(format).join(" / ");
+}
+
+function processReport(
+  title: string,
+  estimate: CpuEstimate & MemoryEstimate,
+): string[] {
+  const {
+    cpuMicrosecondsPerMessage,
+    cpuCoresLow,
+    cpuCoresNominal,
+    cpuCoresHigh,
+    cpuPercentLow,
+    cpuPercentNominal,
+    cpuPercentHigh,
+    ramWindowMiBLow,
+    ramWindowMiBNominal,
+    ramWindowMiBHigh,
+    ramFullMiBLow,
+    ramFullMiBNominal,
+    ramFullMiBHigh,
+  } = estimate;
+  return [
+    title,
+    `  CPU time per message — ${formatNumber(cpuMicrosecondsPerMessage)} µs`,
+    `  CPU, cores — ${scenarios([cpuCoresLow, cpuCoresNominal, cpuCoresHigh])}`,
+    `  CPU, % of one core — ${scenarios([cpuPercentLow, cpuPercentNominal, cpuPercentHigh])}`,
+    `  RAM for the buffer window, MiB — ${scenarios([ramWindowMiBLow, ramWindowMiBNominal, ramWindowMiBHigh], formatMemory)}`,
+    `  RAM at HWM, MiB — ${scenarios([ramFullMiBLow, ramFullMiBNominal, ramFullMiBHigh], formatMemory)}`,
+  ];
+}
+
+export function formatReport({
+  normalizedInput,
+  traffic,
+  publisher,
+  subscriber,
+  queue,
+  metadata,
+}: CapacityEstimate): string {
+  const window = `${formatNumber(queue.windowSeconds)} s`;
+  return [
+    "Preliminary ZeroMQ estimate",
+    `Model ${metadata.modelVersion}, profiles ${metadata.configVersion}`,
+    `Input — ${formatNumber(normalizedInput.publisherCount)} publisher(s), ${formatNumber(normalizedInput.messageBytes)} B, ${formatNumber(normalizedInput.messagesPerSecondPerPublisher)} msg/s per publisher, ${normalizedInput.serialization}`,
+    `Total message rate — ${formatNumber(traffic.totalMessagesPerSecond)} msg/s`,
+    `Payload traffic — ${formatNumber(traffic.payloadBytesPerSecond)} B/s, ${formatNumber(traffic.payloadMBPerSecond)} MB/s, ${formatNumber(traffic.payloadMbps)} Mbps`,
+    "",
+    "Estimate order — low / nominal / high",
+    ...processReport(
+      `One publisher (${normalizedInput.publisherLanguage})`,
+      publisher,
+    ),
+    ...processReport(
+      `One subscriber (${normalizedInput.subscriberLanguage})`,
+      subscriber,
+    ),
+    "",
+    `Subscriber connections — ${formatNumber(subscriber.connectionCount)}`,
+    `Queue per connection — ${formatNumber(queue.messagesPerPeerWindow)} msg in ${window}, ${formatNumber(queue.messagesPerPeerFull)} at HWM`,
+    `Throughput of one handler — ${formatNumber(subscriber.estimatedSingleThreadCapacityMsgPerSecond)} msg/s`,
+    `Unserved messages in ${window} — ${formatNumber(subscriber.estimatedUnservedMessagesInWindow)}`,
+    "",
+    "Warnings",
+    ...metadata.warnings.map((code) => `  ${warningMessages[code]} [${code}]`),
+    "",
+    "Assumptions",
+    ...metadata.assumptions.map((assumption) => `  ${assumption}`),
+  ].join("\n");
+}
