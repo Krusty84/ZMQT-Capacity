@@ -26,7 +26,8 @@ export function normalizeInput(input: unknown): NormalizedInput {
     messageFrequency,
     frequencyUnit,
   } = input;
-  // Specification §4.1. S = messageSize × sizeMultiplier in bytes.
+  // Ref ../../ARCHITECTURE.md#input-and-units
+  // S = messageSize × sizeMultiplier in bytes.
   const messageBytes = checkedNumber(
     messageSize * sizeMultipliers[messageSizeUnit],
     "messageSize",
@@ -46,7 +47,8 @@ export function normalizeInput(input: unknown): NormalizedInput {
     );
   }
 
-  // Specification §4.2. f = messageFrequency × frequencyMultiplier in msg/s per publisher.
+  // Ref ../../ARCHITECTURE.md#input-and-units
+  // f = messageFrequency × frequencyMultiplier in msg/s per publisher.
   // The multipliers for minute, second, and millisecond are 1/60, 1, and 1000.
   let rate = messageFrequency;
   if (frequencyUnit === "minute") rate /= 60;

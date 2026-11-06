@@ -9,12 +9,14 @@ import { checkedNumber } from "../validation/validate.js";
 import { BYTES_PER_MB } from "./units.js";
 
 export function estimateTraffic(input: NormalizedInput): TrafficEstimate {
-  // Specification §5.1. R = N × f, where N is the publisher count and f is the message rate per publisher.
+  // Ref ../../ARCHITECTURE.md#payload-traffic
+  // R = N × f, where N is the publisher count and f is the message rate per publisher.
   const totalMessagesPerSecond = checkedNumber(
     input.publisherCount * input.messagesPerSecondPerPublisher,
     "totalMessagesPerSecond",
   );
-  // Specification §5.2. B_payload = R × S in B/s, where S is the message size in bytes.
+  // Ref ../../ARCHITECTURE.md#payload-traffic
+  // B_payload = R × S in B/s, where S is the message size in bytes.
   const payloadBytesPerSecond = checkedNumber(
     totalMessagesPerSecond * input.messageBytes,
     "payloadBytesPerSecond",

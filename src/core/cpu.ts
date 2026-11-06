@@ -9,7 +9,8 @@ import { checkedNumber } from "../validation/validate.js";
 import { BYTES_PER_KIB, MICROSECONDS_PER_SECOND } from "./units.js";
 
 export function oneCoreMessageRate(microsecondsPerMessage: number): number {
-  // Specification §8.2. mu = 1 000 000 / t_msg in msg/s. For the subscriber, t_msg = t_sub.
+  // Ref ../../ARCHITECTURE.md#overload-and-warnings
+  // mu = 1 000 000 / t_msg in msg/s. For the subscriber, t_msg = t_sub.
   return checkedNumber(
     MICROSECONDS_PER_SECOND / microsecondsPerMessage,
     "estimatedSingleThreadCapacityMsgPerSecond",
@@ -22,14 +23,16 @@ export function estimateCpu(
   messageBytes: number,
   { a, b }: CpuCoefficients,
 ): CpuEstimate {
-  // Specification §4.1 and §6.1. t_msg = a + b × S_kib in µs, where S_kib = S / 1024.
-  // Use a and b from the language and format profiles in §6.2–6.3.
+  // Ref ../../ARCHITECTURE.md#cpu-model
+  // t_msg = a + b × S_kib in µs, where S_kib = S / 1024.
+  // For a and b by language and format, ref ../../ARCHITECTURE.md#cpu-profiles
   const cpuMicrosecondsPerMessage = checkedNumber(
     a + b * (messageBytes / BYTES_PER_KIB),
     "cpuMicrosecondsPerMessage",
     Number.MIN_VALUE,
   );
-  // Specification §6.4–6.5. C_pub = f × t_pub / 1 000 000, C_sub = R × t_sub / 1 000 000.
+  // Ref ../../ARCHITECTURE.md#cpu-model
+  // C_pub = f × t_pub / 1 000 000, C_sub = R × t_sub / 1 000 000.
   // Both formulas use C = messagesPerSecond / (1 000 000 / t_msg).
   const cores =
     messagesPerSecond / oneCoreMessageRate(cpuMicrosecondsPerMessage);

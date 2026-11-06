@@ -24,7 +24,8 @@ export function analyzeCapacity(
   const estimatedSingleThreadCapacityMsgPerSecond = oneCoreMessageRate(
     cpu.cpuMicrosecondsPerMessage,
   );
-  // Specification §8.3. Q_growth = max(0, R - mu) × T. T is the buffer window in seconds.
+  // Ref ../../ARCHITECTURE.md#overload-and-warnings
+  // Q_growth = max(0, R - mu) × T. T is the buffer window in seconds.
   const excessRate = Math.max(
     0,
     traffic.totalMessagesPerSecond - estimatedSingleThreadCapacityMsgPerSecond,

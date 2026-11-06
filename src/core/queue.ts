@@ -11,7 +11,8 @@ export function estimateQueue(
   messagesPerSecondPerPublisher: number,
 ): QueueEstimate {
   const { hwm, queueWindowSeconds: windowSeconds } = settings;
-  // Specification §7.4. Q_window = min(HWM, ceil(f × T_window)) in messages per connection.
+  // Ref ../../ARCHITECTURE.md#queue-model
+  // Q_window = min(HWM, ceil(f × T_window)) in messages per connection.
   const windowMessages = checkedNumber(
     messagesPerSecondPerPublisher * windowSeconds,
     "messagesPerPeerWindow",

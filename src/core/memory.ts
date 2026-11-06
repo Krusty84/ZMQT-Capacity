@@ -14,7 +14,8 @@ export function estimateMemory(
   queue: QueueEstimate,
   { baseMiB, connectionKiB, messageOverheadBytes }: ImplementationProfile,
 ): MemoryEstimate {
-  // Specification §7.1. M_process = M_base + M_connections + M_queues.
+  // Ref ../../ARCHITECTURE.md#ram-model
+  // M_process = M_base + M_connections + M_queues.
   // M_connections = n × M_conn / 1024 in MiB, with M_conn in KiB. n = 1 for the publisher and N for the subscriber.
   const idleMiBLow =
     baseMiB.low + connectionCount * (connectionKiB.low / BYTES_PER_KIB);
@@ -27,7 +28,8 @@ export function estimateMemory(
     (messageBytes + messageOverheadBytes.high) / BYTES_PER_MIB;
 
   function estimateRange(messagesPerPeer: number) {
-    // Specification §7.5–7.6. M_pub = M_base_pub + M_conn_pub + Q × (S + O_pub).
+    // Ref ../../ARCHITECTURE.md#ram-model
+    // M_pub = M_base_pub + M_conn_pub + Q × (S + O_pub).
     // M_sub = M_base_sub + N × M_conn_sub + N × Q × (S + O_sub).
     // Apply the formulas to the low and high estimates in MiB with Q = Q_window or Q_full.
     const queuedMessages = connectionCount * messagesPerPeer;
