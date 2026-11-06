@@ -1,10 +1,29 @@
 # ZMQT-Capacity
 
-This module gives preliminary estimates of CPU use, RAM use, and payload traffic for ZeroMQ PUB/SUB. The model describes traffic from identical publishers to one subscriber.
+Estimate CPU load, RAM use, and payload traffic for ZeroMQ PUB/SUB.
 
-## CLI
+## What Is This?
 
-Requires Node.js 24. After you install the dependencies, you can build the module and run estimates offline.
+ZMQT-Capacity is a tool for preliminary capacity estimates. It models identical publishers that send single-frame messages over TCP to one subscriber.
+
+## Features
+
+- Calculate the total message rate and payload traffic.
+- Estimate low, nominal, and high CPU load and RAM use for one publisher and the subscriber. Estimate RAM for the buffer window and for queues at the high-water mark (HWM).
+- Estimate the throughput of one subscriber handler and how many messages go unserved during the buffer window. Report overload and possible message loss.
+- Select Python or C++ profiles for publishers and Java, Python, or C++ profiles for the subscriber. Use JSON or Protobuf serialization.
+
+## Who is it for?
+
+For engineers who estimate load and size CPU, RAM, and network resources for ZeroMQ PUB/SUB systems.
+
+## How to install and use
+
+Requires Node.js 24. The tool runs offline after setup.
+
+### CLI
+
+Run these commands in the project folder.
 
 ```sh
 npm ci
@@ -12,7 +31,9 @@ npm run build
 npm run cli
 ```
 
-After installing the built npm package, run `zmqt-capacity`. For help, run `zmqt-capacity --help` or `npm run cli -- --help`.
+After you install the built npm package, run `zmqt-capacity`. For help, run `npm run cli -- --help` or `zmqt-capacity --help`.
+
+Enter one value per line. Use a decimal point or comma. Press `Ctrl+C` to cancel.
 
 Example session with part of the report
 
@@ -28,44 +49,7 @@ Serialization format (json / protobuf) > json
 
 Preliminary ZeroMQ estimate
 Model 1.0, profiles 1.0.0
+Input — 300 publisher(s), 1 024 B, 20 msg/s per publisher, json
 Total message rate — 6 000 msg/s
 Payload traffic — 6 144 000 B/s, 6.144 MB/s, 49.152 Mbps
-```
-
-Enter one value per line. Use a decimal point, as in `0.5`. The CLI also accepts a decimal comma. Press Ctrl+C to cancel the calculation.
-
-## API
-
-```js
-import { estimateCapacity } from "zmqt-capacity";
-
-const estimate = estimateCapacity({
-  publisherCount: 300,
-  messageSize: 1,
-  messageSizeUnit: "KiB",
-  messageFrequency: 20,
-  frequencyUnit: "second",
-  publisherLanguage: "python",
-  subscriberLanguage: "java",
-  serialization: "json",
-});
-
-if (estimate.ok) {
-  console.log(estimate.result);
-} else {
-  console.error(estimate.error);
-}
-```
-
-Set `messageSize` to the serialized message size. Valid size units are `B`, `KiB`, and `MiB`. Set the message rate per `minute`, `second`, or `millisecond`. The publisher count and the size in bytes must be positive safe integers in JavaScript.
-
-`subscriber.estimatedUnservedMessagesInWindow` estimates how many messages go unserved during the buffer window. Use this field to diagnose overload. The warning thresholds are 100 000 msg/s in total for high message rate and 1 000 publishers for large publisher count.
-
-Profiles and settings are in `src/profiles`. If you change coefficients, update `configVersion` in `settings.json`. The result includes the model version, configuration version, assumptions, and warning codes.
-
-## Checks
-
-```sh
-npm run typecheck
-npm test
 ```

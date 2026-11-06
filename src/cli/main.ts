@@ -1,9 +1,9 @@
+#!/usr/bin/env node
 /*
  * SPDX-FileCopyrightText: Copyright (c) 2026 Alexey Sedoykin
  * SPDX-License-Identifier: MIT
  */
 
-#!/usr/bin/env node
 import process from "node:process";
 import { createInterface } from "node:readline";
 import { estimateCapacity } from "../index.js";
@@ -30,19 +30,26 @@ interface Question<T> {
   parse: (answer: string) => T | undefined;
 }
 
-function choice<T extends string>(prompt: string, options: readonly T[]): Question<T> {
+function choice<T extends string>(
+  prompt: string,
+  options: readonly T[],
+): Question<T> {
   return {
     prompt: `${prompt} (${options.join(" / ")})`,
-    parse: (answer) => options.find((option) => option.toLowerCase() === answer.toLowerCase()),
+    parse: (answer) =>
+      options.find((option) => option.toLowerCase() === answer.toLowerCase()),
   };
 }
 
 function parseDecimal(answer: string): number | undefined {
-  const match = /^([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))(?:e[+-]?\d+)?$/i.exec(answer);
+  const match = /^([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+))(?:e[+-]?\d+)?$/i.exec(
+    answer,
+  );
   if (!match) return undefined;
 
   const value = Number(answer.replace(",", "."));
-  if (!Number.isFinite(value) || (value === 0 && /[1-9]/.test(match[1]))) return undefined;
+  if (!Number.isFinite(value) || (value === 0 && /[1-9]/.test(match[1])))
+    return undefined;
   return value;
 }
 
@@ -51,7 +58,9 @@ const questions = {
     prompt: "Publisher count (integer, 1 or more)",
     parse(answer) {
       const value = Number(answer);
-      return /^\d+$/.test(answer) && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+      return /^\d+$/.test(answer) && Number.isSafeInteger(value) && value > 0
+        ? value
+        : undefined;
     },
   },
   messageSize: {
@@ -69,7 +78,10 @@ const questions = {
       return value !== undefined && value >= 0 ? value : undefined;
     },
   },
-  frequencyUnit: choice("Period — minute, second, or millisecond", frequencyUnits),
+  frequencyUnit: choice(
+    "Period — minute, second, or millisecond",
+    frequencyUnits,
+  ),
   publisherLanguage: choice("Publisher language", publisherLanguages),
   subscriberLanguage: choice("Subscriber language", subscriberLanguages),
   serialization: choice("Serialization format", serializations),
@@ -78,7 +90,12 @@ const questions = {
 async function runWizard(): Promise<number> {
   const { stdin, stdout, stderr } = process;
   const terminal = Boolean(stdin.isTTY && stderr.isTTY);
-  const reader = createInterface({ input: stdin, output: stderr, terminal, crlfDelay: Infinity });
+  const reader = createInterface({
+    input: stdin,
+    output: stderr,
+    terminal,
+    crlfDelay: Infinity,
+  });
   const lines = reader[Symbol.asyncIterator]();
   const inputEnded = new Error("Input ended.");
   let interrupted = false;
@@ -106,7 +123,9 @@ async function runWizard(): Promise<number> {
     }
   }
 
-  reader.once("close", () => { closed = true; });
+  reader.once("close", () => {
+    closed = true;
+  });
   reader.once("SIGINT", cancel);
   process.once("SIGINT", cancel);
   try {
@@ -130,7 +149,9 @@ async function runWizard(): Promise<number> {
 
       const { code, field } = estimate.error;
       if (field === "messageSize") {
-        stderr.write("Enter a size that converts to a whole number of bytes in the allowed range.\n");
+        stderr.write(
+          "Enter a size that converts to a whole number of bytes in the allowed range.\n",
+        );
         input.messageSize = await ask(questions.messageSize);
         input.messageSizeUnit = await ask(questions.messageSizeUnit);
       } else if (field === "messageFrequency") {
@@ -138,14 +159,20 @@ async function runWizard(): Promise<number> {
         input.messageFrequency = await ask(questions.messageFrequency);
         input.frequencyUnit = await ask(questions.frequencyUnit);
       } else {
-        stderr.write(`Calculation error (${code}, ${field}). ${estimate.error.message}\n`);
+        stderr.write(
+          `Calculation error (${code}, ${field}). ${estimate.error.message}\n`,
+        );
         return 1;
       }
     }
   } catch (error) {
     if (error !== inputEnded) throw error;
     if (terminal) stderr.write("\n");
-    stderr.write(interrupted ? "Calculation canceled.\n" : "Input ended before the calculation.\n");
+    stderr.write(
+      interrupted
+        ? "Calculation canceled.\n"
+        : "Input ended before the calculation.\n",
+    );
     return interrupted ? 130 : 2;
   } finally {
     process.removeListener("SIGINT", cancel);
