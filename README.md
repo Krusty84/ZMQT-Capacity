@@ -21,35 +21,12 @@ For engineers who estimate load and size CPU, RAM, and network resources for Zer
 
 Requires Node.js 24. The tool runs offline after setup.
 
-### CLI
-
 Run these commands in the project folder.
 
 ```sh
 npm ci
 npm run build
-npm run cli
+npm start
 ```
 
-After you install the built npm package, run `zmqt-capacity`. For help, run `npm run cli -- --help` or `zmqt-capacity --help`.
-
-Enter one value per line. Use a decimal point or comma. Press `Ctrl+C` to cancel.
-
-Example session with part of the report
-
-```text
-Publisher count (integer, 1 or more) > 300
-Serialized message size (greater than 0) > 1
-Size unit (B / KiB / MiB) > KiB
-Messages from one publisher per period (0 or more) > 20
-Period — minute, second, or millisecond (minute / second / millisecond) > second
-Publisher language (python / cpp) > python
-Subscriber language (java / python / cpp) > java
-Serialization format (json / protobuf) > json
-
-Preliminary ZeroMQ estimate
-Model 1.0, profiles 1.0.0
-Input — 300 publisher(s), 1 024 B, 20 msg/s per publisher, json
-Total message rate — 6 000 msg/s
-Payload traffic — 6 144 000 B/s, 6.144 MB/s, 49.152 Mbps
-```
+After you install the built npm package, run `zmqt-capacity`. Use an interactive terminal with at least 80 columns and 24 rows. For help, run `zmqt-capacity --help`.

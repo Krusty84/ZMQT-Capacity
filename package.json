@@ -31,22 +31,28 @@
     }
   },
   "bin": {
-    "zmqt-capacity": "dist/cli/main.js"
+    "zmqt-capacity": "dist/tui/main.js"
   },
   "files": [
     "dist"
   ],
   "scripts": {
+    "prebuild": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
     "build": "tsc -p tsconfig.build.json",
-    "cli": "node dist/cli/main.js",
+    "start": "node dist/tui/main.js",
     "typecheck": "tsc --noEmit",
     "pretest": "npm run build",
     "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "@types/react": "19.3.0",
     "fast-check": "4.10.2",
     "typescript": "5.9.3",
     "vitest": "5.1.0"
+  },
+  "dependencies": {
+    "ink": "8.0.0",
+    "react": "19.3.1"
   }
 }

@@ -10,6 +10,7 @@ import type {
   WarningCode,
 } from "../models/result.js";
 
+const languages = { python: "Python", cpp: "C++", java: "Java" };
 const warningMessages: Record<WarningCode, string> = {
   UNVALIDATED_COEFFICIENTS:
     "The coefficients are based on engineering assumptions.",
@@ -24,28 +25,59 @@ const warningMessages: Record<WarningCode, string> = {
   LARGE_MESSAGE_SIZE: "Large message size.",
   LARGE_PUBLISHER_COUNT: "Large publisher count.",
   POTENTIAL_PUBSUB_MESSAGE_LOSS: "PUB/SUB can lose messages.",
-  KERNEL_MEMORY_NOT_INCLUDED:
-    "The RAM estimate excludes kernel network buffers.",
+  KERNEL_MEMORY_NOT_INCLUDED: "The RAM estimate excludes kernel network buffers.",
   HWM_NOT_HARD_RSS_LIMIT: "Actual RAM use can exceed the estimate at HWM.",
 };
-
-const decimal = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 6 });
-const scientific = new Intl.NumberFormat("ru-RU", {
+const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
+const whole = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const scientific = new Intl.NumberFormat("en-US", {
   notation: "scientific",
   maximumFractionDigits: 3,
 });
-const memory = new Intl.NumberFormat("ru-RU", {
+const memory = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
 function formatNumber(value: number): string {
   const useScientific = (value > 0 && value < 1e-6) || value >= 1e9;
-  return (useScientific ? scientific : decimal).format(value).replace(",", ".");
+  return (useScientific ? scientific : decimal).format(value);
 }
 
 function formatMemory(value: number): string {
-  return memory.format(value).replace(",", ".");
+  return (value >= 1e9 ? scientific : whole).format(value);
+}
+
+function range(low: number, high: number, format = formatNumber): string {
+  const first = format(low);
+  const last = format(high);
+  return first === last ? first : `${first}–${last}`;
+}
+
+export function formatSummary({
+  normalizedInput,
+  traffic,
+  publisher,
+  subscriber,
+  queue,
+}: CapacityEstimate): string {
+  return [
+    `Total rate  ${formatNumber(traffic.totalMessagesPerSecond)} msg/s`,
+    `Payload traffic  ${formatNumber(traffic.payloadMBPerSecond)} MB/s`,
+    "",
+    `One publisher — ${languages[normalizedInput.publisherLanguage]}`,
+    `CPU (one core)  ${range(publisher.cpuPercentLow, publisher.cpuPercentHigh)}%`,
+    `Process RAM  ${range(publisher.ramWindowMiBLow, publisher.ramWindowMiBHigh, formatMemory)} MiB`,
+    "",
+    `Subscriber — ${languages[normalizedInput.subscriberLanguage]}`,
+    `CPU (one core)  ${range(subscriber.cpuPercentLow, subscriber.cpuPercentHigh)}%`,
+    `RAM (${formatNumber(queue.windowSeconds)} s queue)  ${range(subscriber.ramWindowMiBLow, subscriber.ramWindowMiBHigh, formatMemory)} MiB`,
+    `RAM at HWM (${formatNumber(queue.hwm)} msg/peer)`,
+    `${range(subscriber.ramFullMiBLow, subscriber.ramFullMiBHigh, formatMemory)} MiB`,
+    "",
+    "Estimates use assumed coefficients.",
+    "RAM excludes OS network buffers.",
+  ].join("\n");
 }
 
 function scenarios(values: number[], format = formatNumber): string {
@@ -76,12 +108,12 @@ function processReport(
     `  CPU time per message — ${formatNumber(cpuMicrosecondsPerMessage)} µs`,
     `  CPU, cores — ${scenarios([cpuCoresLow, cpuCoresNominal, cpuCoresHigh])}`,
     `  CPU, % of one core — ${scenarios([cpuPercentLow, cpuPercentNominal, cpuPercentHigh])}`,
-    `  RAM for the buffer window, MiB — ${scenarios([ramWindowMiBLow, ramWindowMiBNominal, ramWindowMiBHigh], formatMemory)}`,
-    `  RAM at HWM, MiB — ${scenarios([ramFullMiBLow, ramFullMiBNominal, ramFullMiBHigh], formatMemory)}`,
+    `  RAM for the buffer window, MiB — ${scenarios([ramWindowMiBLow, ramWindowMiBNominal, ramWindowMiBHigh], memory.format)}`,
+    `  RAM at HWM, MiB — ${scenarios([ramFullMiBLow, ramFullMiBNominal, ramFullMiBHigh], memory.format)}`,
   ];
 }
 
-export function formatReport({
+export function formatDetails({
   normalizedInput,
   traffic,
   publisher,
@@ -99,11 +131,11 @@ export function formatReport({
     "",
     "Estimate order — low / nominal / high",
     ...processReport(
-      `One publisher (${normalizedInput.publisherLanguage})`,
+      `One publisher (${languages[normalizedInput.publisherLanguage]})`,
       publisher,
     ),
     ...processReport(
-      `One subscriber (${normalizedInput.subscriberLanguage})`,
+      `One subscriber (${languages[normalizedInput.subscriberLanguage]})`,
       subscriber,
     ),
     "",

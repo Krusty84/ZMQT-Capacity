@@ -11,20 +11,20 @@ ZMQT-Capacity estimates CPU work, resident process memory, and payload traffic f
 | Component | Function |
 | --- | --- |
 | [Library entry point](src/index.ts) | `estimateCapacity` selects profiles, calls the estimators, and assembles the result. |
-| [CLI](src/cli) | The wizard reads values with Node.js `readline`. It writes prompts and errors to stderr and the report to stdout. |
+| [TUI](src/tui) | Ink and React render the form and results. Ink handles keys, and an SGR handler uses the rendered control positions for mouse input. |
 | [Calculation core](src/core) | Converts units and estimates traffic, CPU, queue depth, RAM, and overload. |
 | [Profiles](src/profiles) | JSON files hold CPU coefficients, RAM ranges, and model settings. |
 | [Types](src/models) and [validation](src/validation) | Define the API and check inputs, configuration versions, and numeric ranges. |
-| [Tests](src/tests) | Cover formulas, properties, limits, reference values, and CLI behavior. |
+| [Tests](src/tests) | Cover formulas, properties, limits, reference values, and TUI behavior. |
 
-The runtime needs Node.js 24. TypeScript, Node.js types, Vitest, and fast-check support builds and tests. The library and CLI run offline. The ZeroMQ implementations in the profile tables identify the systems that the tool models. The calculation uses arithmetic in place of sockets or hardware measurements.
+The runtime needs Node.js 24. TypeScript, Node.js types, Vitest, and fast-check support builds and tests. The library and TUI run offline. The ZeroMQ implementations in the profile tables identify the systems that the tool models. The calculation uses arithmetic in place of sockets or hardware measurements.
 
 ## Data flow and API
 
 1. Pass the inputs to `estimateCapacity`. It validates the inputs, converts size to bytes and rate to messages per second, and checks the configuration version.
 2. Select one profile per role. Select CPU coefficients for the serialization format.
 3. Calculate total rate and payload traffic, CPU work for both roles, both queue depths, and RAM for both roles. Compare the offered rate with the subscriber capacity and add warnings.
-4. Return the result with its assumptions and versions. The CLI formats the result and rounds RAM to two decimal places. The API uses unrounded values.
+4. Return the result with its assumptions and versions. The TUI calls the API after each change and formats the result for the summary or detail view. The API uses unrounded values.
 
 [`CapacityResult`](src/models/result.ts) contains `{ ok: true, result }` or `{ ok: false, error }`. The error contains `code`, `field`, and `message`. The result has these sections.
 
@@ -37,7 +37,7 @@ The runtime needs Node.js 24. TypeScript, Node.js types, Vitest, and fast-check 
 | `queue` | `hwm`, `windowSeconds`, `messagesPerPeerWindow`, `messagesPerPeerFull`. |
 | `metadata` | `modelVersion`, `configVersion`, `estimationMethod` (`heuristic`), `preliminary` (`true`), `assumptions`, and machine-readable `warnings`. |
 
-The CLI runs one estimate per session. Exit codes are `0` for success or help, `1` for a calculation error, `2` for an invalid argument or incomplete input, and `130` for Ctrl+C.
+The TUI runs in an interactive terminal. It displays input errors in the results panel. Exit codes are `0` for help, `2` for an invalid argument or a missing interactive terminal, and `130` for Ctrl+C.
 
 ## Input and units
 
@@ -213,7 +213,7 @@ The specification reference uses 300 Python publishers, one Java subscriber, JSO
 | Subscriber RAM at `Q_window`, MiB | 281.34 | 482.57 | 683.79 |
 | Subscriber RAM at `Q_full`, MiB | 604.34 | 859.40 | 1114.45 |
 
-Run `npm run typecheck` and `npm test` with Node.js 24. The test command builds the CLI first. The [integration test](src/tests/integration.test.ts) compares the reference RAM values after rounding to two places with a tolerance of 0.01 MiB. Use explicit, stricter tolerances for unit tests.
+Run `npm run typecheck` and `npm test` with Node.js 24. The test command builds the package first. The [integration test](src/tests/integration.test.ts) compares the reference RAM values after rounding to two places with a tolerance of 0.01 MiB. Use explicit, stricter tolerances for unit tests.
 
 - Check all size and rate conversions. For example, 1 KiB gives 1024 B, 1 MiB gives 1048576 B, 60 msg/min gives 1 msg/s, 1 msg/ms gives 1000 msg/s, and 0.5 msg/s gives 0.5 msg/s. Test all 12 publisher, subscriber, and format combinations at 1, 256, 1024, and 65536 B. Check CPU profile selection, time and percentage conversions, scenario factors, and use of unrounded values.
 - Check base RAM, per-connection RAM and its linear scaling, per-message RAM, and binary unit conversions. With a 1 s window and HWM 1000, `f = 0`, `0.5`, and `2000` msg/s give `Q_window = 0`, `1`, and `1000`. Check `Q_full = 1000` in all cases.

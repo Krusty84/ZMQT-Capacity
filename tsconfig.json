@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES2024",
     "module": "NodeNext",
+    "jsx": "react-jsx",
     "strict": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
@@ -9,5 +10,5 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
