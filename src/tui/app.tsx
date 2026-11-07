@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+import { readFileSync } from "node:fs";
 import {
   Box,
   measureElement,
@@ -28,6 +29,13 @@ import {
 import { useMouse } from "./mouse.js";
 import { numericParsers } from "./parse.js";
 import { formatDetails, formatSummary } from "./report.js";
+
+const { version, license, repository } = JSON.parse(
+  readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
+) as { version: string; license: string; repository: { url: string } };
+const repositoryUrl = repository.url.replace(/^git\+/, "").replace(/\.git$/, "");
+const aboutWidth = 48;
+const aboutHeight = 8;
 
 const numericLabels = {
   publisherCount: "Publisher count",
@@ -65,6 +73,7 @@ const focusOrder = [
   "frequencyUnit",
   ...radioChoices.map(({ id }) => id),
   "report",
+  "about",
 ];
 
 type NumericField = keyof typeof numericLabels;
@@ -77,6 +86,7 @@ interface Session {
   menu?: { field: MenuField; index: number };
   details: boolean;
   scrollTop: number;
+  aboutOpen: boolean;
 }
 
 const defaultForm: Form = {
@@ -95,6 +105,7 @@ const initialSession: Session = {
   cursor: defaultForm.publisherCount.length,
   details: false,
   scrollTop: 0,
+  aboutOpen: false,
 };
 
 function isNumericField(id: string): id is NumericField {
@@ -127,6 +138,7 @@ function selectOption(session: Session, field: MenuField, index: number): Sessio
 
 function activate(session: Session): Session {
   const { focus, form } = session;
+  if (focus === "about") return { ...session, aboutOpen: true };
   if (focus === "report") {
     return { ...session, details: !session.details, scrollTop: 0 };
   }
@@ -167,6 +179,9 @@ function handleKey(session: Session, input: string, key: Key): Session {
   const { focus, menu } = session;
   const direction = key.upArrow ? -1 : key.downArrow ? 1 : 0;
   const confirm = key.return || input === "\r" || input === " ";
+  if (session.aboutOpen) {
+    return key.escape || confirm ? { ...session, aboutOpen: false } : session;
+  }
   if (key.escape && menu) return { ...session, menu: undefined };
   if (key.tab || input === "\t") return moveFocus(session, key.shift ? -1 : 1);
   if (menu) {
@@ -209,17 +224,18 @@ export function App() {
   const fits = columns >= 80 && rows >= 24;
   // Reserve one row for the footer and one for Ink's trailing newline.
   const panelHeight = rows - 2;
-  const pageHeight = panelHeight - 3;
+  const pageHeight = panelHeight - 4;
   const targets = useRef(new Map<string, DOMElement>());
   const viewport = useRef<DOMElement>(null);
   const report = useRef<DOMElement>(null);
+  const closeAbout = useRef<DOMElement>(null);
   const { height: reportHeight } = useBoxMetrics(report);
   const maxScroll = Math.max(0, reportHeight - pageHeight);
   const scrollTop = Math.min(session.scrollTop, maxScroll);
 
   function scrollBy(amount: number) {
     setSession((current) => {
-      if (!current.details) return current;
+      if (current.aboutOpen || !current.details) return current;
       const top = Math.min(current.scrollTop, maxScroll);
       return { ...current, scrollTop: Math.max(0, Math.min(top + amount, maxScroll)) };
     });
@@ -244,7 +260,7 @@ export function App() {
   });
   usePaste((input) => {
     if (!fits) return;
-    setSession((current) => isNumericField(current.focus)
+    setSession((current) => !current.aboutOpen && isNumericField(current.focus)
       ? editNumber(current, current.focus, input.trim())
       : current);
   });
@@ -254,6 +270,13 @@ export function App() {
       x >= area.x && x < area.x + area.width &&
       y >= area.y && y < area.y + area.height;
 
+    if (session.aboutOpen) {
+      const button = closeAbout.current;
+      if (action === "click" && button && contains(measureElement(button))) {
+        setSession((current) => ({ ...current, aboutOpen: false }));
+      }
+      return;
+    }
     if (action !== "click") {
       if (viewport.current && contains(measureElement(viewport.current))) {
         scrollBy(action === "scrollUp" ? -3 : 3);
@@ -265,6 +288,7 @@ export function App() {
       if (!contains(area)) continue;
 
       setSession((current) => {
+        if (current.aboutOpen) return current;
         if (id.startsWith(optionPrefix)) {
           return current.menu
             ? selectOption(current, current.menu.field, Number(id.slice(optionPrefix.length)))
@@ -293,7 +317,7 @@ export function App() {
   const contentWidth = formWidth - 4;
   const numberWidth = Math.floor((contentWidth - 1) / 2);
   const menuWidth = contentWidth - numberWidth - 1;
-  const marker = (id: string) => session.focus === id ? "> " : "  ";
+  const marker = (id: string) => !session.aboutOpen && session.focus === id ? "> " : "  ";
 
   function target(id: string) {
     return (node: DOMElement | null) => {
@@ -393,7 +417,7 @@ export function App() {
           width={columns - formWidth - 1}
           flexShrink={0}
         >
-          <Box justifyContent="space-between" height={1} flexShrink={0}>
+          <Box justifyContent="space-between" height={1} marginBottom={1} flexShrink={0}>
             <Text bold>Estimated results</Text>
             <Box ref={target("report")}>
               <Text bold={session.focus === "report"}>
@@ -415,7 +439,39 @@ export function App() {
           </Box>
         </Box>
       </Box>
-      <Text>↑/↓ Tab Move  ←/→ Edit  Enter Select  Esc Close  PgUp/PgDn Scroll  Ctrl+C Exit</Text>
+      <Box justifyContent="space-between" gap={1} height={1} flexShrink={0}>
+        <Text wrap="truncate-end">
+          ↑↓ Tab Move  ←→ Edit  Enter Select  Esc Close  PgUp/PgDn  Ctrl+C Exit
+        </Text>
+        <Box ref={target("about")} flexShrink={0}>
+          <Text bold={!session.aboutOpen && session.focus === "about"}>
+            {marker("about")}[About]
+          </Text>
+        </Box>
+      </Box>
+      {session.aboutOpen && (
+        <Box
+          position="absolute"
+          left={Math.floor((columns - aboutWidth) / 2)}
+          top={Math.floor((panelHeight - aboutHeight) / 2)}
+          width={aboutWidth}
+          height={aboutHeight}
+          flexDirection="column"
+          borderStyle="round"
+          backgroundColor="black"
+          paddingX={1}
+        >
+          <Box marginBottom={1}>
+            <Text bold color="white">About</Text>
+          </Box>
+          <Text color="white">ZMQT-Capacity {version}</Text>
+          <Text color="white">License {license}</Text>
+          <Text color="white">{repositoryUrl}</Text>
+          <Box ref={closeAbout} alignSelf="flex-end">
+            <Text bold color="white">&gt; [Close]</Text>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }

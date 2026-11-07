@@ -77,8 +77,9 @@ function renderTui() {
       const column = lines[row].indexOf(text) + offset;
       return `\x1b[<${button};${column + 1};${row + 1}M`;
     },
-    resize(columns: number) {
+    resize(columns: number, rows = stdout.rows) {
       stdout.columns = columns;
+      stdout.rows = rows;
       stdout.emit("resize");
     },
     async close() {
@@ -95,6 +96,7 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
   try {
     await tui.waitFor("6.144 MB/s");
     expect(tui.frame).toMatch(/System parameters[^\n]*Estimated results/);
+    expect(tui.frame.split("\n")[2]).toMatch(/│ +│$/);
     expect(tui.frame).toContain("6,000 msg/s");
     expect(tui.frame).toContain("11.4–68.4%");
     expect(tui.frame).toContain("604–1,114 MiB");
@@ -160,6 +162,66 @@ test("uses mouse coordinates for editing, selection and report scrolling", async
     expect(await tui.app.waitUntilExit()).toBe(130);
     expect(tui.output).toContain("\x1b[?1000l\x1b[?1006l");
     expect(tui.stdin.setRawMode).toHaveBeenLastCalledWith(false);
+  } finally {
+    await tui.close();
+  }
+});
+
+function expectAboutCentered(frame: string, columns: number, rows: number) {
+  const left = Math.floor((columns - 48) / 2);
+  const top = Math.floor((rows - 2 - 8) / 2);
+  const lines = frame.split("\n");
+  const border = "─".repeat(46);
+  expect(lines[top]?.slice(left, left + 48)).toBe(`╭${border}╮`);
+  expect(lines[top + 2]?.slice(left, left + 48)).toBe(`│${" ".repeat(46)}│`);
+  expect(lines[top + 7]?.slice(left, left + 48)).toBe(`╰${border}╯`);
+}
+
+test("centers the About dialog and isolates its input", async () => {
+  const tui = renderTui();
+  try {
+    await tui.waitFor("6.144 MB/s");
+    expect(tui.frame.split("\n")[22]).toMatch(/Ctrl\+C Exit\s+\[About\]$/);
+    expect(tui.frame.split("\n")[22]).toHaveLength(80);
+    tui.stdin.write("\x1b[A");
+    await tui.waitFor("> [About]");
+
+    tui.stdin.write(tui.mouseAt("[Details]"));
+    await tui.waitFor("Preliminary ZeroMQ estimate");
+    tui.stdin.write("\x1b[6~");
+    await vi.waitFor(() => expect(tui.frame).not.toContain("Preliminary ZeroMQ estimate"));
+    const previousBody = tui.frame.split("\n").slice(2, 22);
+
+    tui.stdin.write("\t\r");
+    await tui.waitFor("> [Close]");
+    expectAboutCentered(tui.frame, 80, 24);
+    expect(tui.frame).toMatch(/ZMQT-Capacity \d+\.\d+\.\d+/);
+    expect(tui.frame).toContain("License MIT");
+    expect(tui.frame).toContain("https://github.com/Krusty84/ZMQT-Capacity");
+
+    tui.stdin.write(tui.mouseAt("Publisher count") + "\t\x1b[B123\x1b[200~456\x1b[201~");
+    tui.stdin.write("\x1b[5~\x1b[<64;77;4M");
+    tui.resize(100, 31);
+    await vi.waitFor(() => expectAboutCentered(tui.frame, 100, 31));
+    tui.resize(79, 23);
+    await tui.waitFor("Enlarge the terminal");
+    tui.resize(80, 24);
+    await vi.waitFor(() => expectAboutCentered(tui.frame, 80, 24));
+
+    tui.stdin.write("\x1b");
+    await tui.waitFor("> [About]");
+    expect(tui.frame).toContain("[Summary]");
+    expect(tui.frame.split("\n").slice(2, 22)).toEqual(previousBody);
+
+    tui.stdin.write(tui.mouseAt("[About]"));
+    await tui.waitFor("> [Close]");
+    tui.stdin.write(tui.mouseAt("[Close]"));
+    await tui.waitFor("> [About]");
+
+    tui.stdin.write(" ");
+    await tui.waitFor("> [Close]");
+    tui.stdin.write("\r");
+    await tui.waitFor("> [About]");
   } finally {
     await tui.close();
   }
