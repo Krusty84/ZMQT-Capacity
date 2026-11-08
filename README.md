@@ -6,6 +6,8 @@ Estimate CPU load, RAM use, and payload traffic for ZeroMQ PUB/SUB.
 
 ZMQT-Capacity is a tool for preliminary capacity estimates. It models identical publishers that send single-frame messages over TCP to one subscriber.
 
+<img width="1432" height="516" alt="image" src="https://github.com/user-attachments/assets/0663267f-13ab-43f0-8639-fb6923ac1e69" />
+
 ## Features
 
 - Calculate the total message rate and payload traffic.
