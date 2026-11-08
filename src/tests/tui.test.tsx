@@ -168,13 +168,15 @@ test("uses mouse coordinates for editing, selection and report scrolling", async
 });
 
 function expectAboutCentered(frame: string, columns: number, rows: number) {
-  const left = Math.floor((columns - 48) / 2);
-  const top = Math.floor((rows - 2 - 8) / 2);
+  const width = 64;
+  const left = Math.floor((columns - width) / 2);
+  const height = 12;
+  const top = Math.floor((rows - 2 - height) / 2);
   const lines = frame.split("\n");
-  const border = "─".repeat(46);
-  expect(lines[top]?.slice(left, left + 48)).toBe(`╭${border}╮`);
-  expect(lines[top + 2]?.slice(left, left + 48)).toBe(`│${" ".repeat(46)}│`);
-  expect(lines[top + 7]?.slice(left, left + 48)).toBe(`╰${border}╯`);
+  const border = "─".repeat(width - 2);
+  expect(lines[top]?.slice(left, left + width)).toBe(`╭${border}╮`);
+  expect(lines[top + 2]?.slice(left, left + width)).toBe(`│${" ".repeat(width - 2)}│`);
+  expect(lines[top + height - 1]?.slice(left, left + width)).toBe(`╰${border}╯`);
 }
 
 test("centers the About dialog and isolates its input", async () => {
@@ -197,7 +199,14 @@ test("centers the About dialog and isolates its input", async () => {
     expectAboutCentered(tui.frame, 80, 24);
     expect(tui.frame).toMatch(/ZMQT-Capacity \d+\.\d+\.\d+/);
     expect(tui.frame).toContain("License MIT");
-    expect(tui.frame).toContain("https://github.com/Krusty84/ZMQT-Capacity");
+    expect(tui.frame).toContain("Author: Alexey Sedoykin");
+    expect(tui.frame).not.toContain("https://github.com/Krusty84/ZMQT-Capacity");
+    expect(tui.frame).toContain("Contact|Support:");
+    expect(tui.frame).toContain("https://www.linkedin.com/in/sedoykin");
+    expect(tui.frame).toContain("https://github.com/Krusty84");
+    expect(tui.output).toContain("\x1b]8;;https://www.linkedin.com/in/sedoykin\x1b\\");
+    expect(tui.output).toContain("\x1b]8;;https://github.com/Krusty84\x1b\\");
+    expect(tui.frame).toContain("Warning: Estimates are approximate and for guidance only.");
 
     tui.stdin.write(tui.mouseAt("Publisher count") + "\t\x1b[B123\x1b[200~456\x1b[201~");
     tui.stdin.write("\x1b[5~\x1b[<64;77;4M");

@@ -30,12 +30,19 @@ import { useMouse } from "./mouse.js";
 import { numericParsers } from "./parse.js";
 import { formatDetails, formatSummary } from "./report.js";
 
-const { version, license, repository } = JSON.parse(
+const { version, license, author } = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
-) as { version: string; license: string; repository: { url: string } };
-const repositoryUrl = repository.url.replace(/^git\+/, "").replace(/\.git$/, "");
-const aboutWidth = 48;
-const aboutHeight = 8;
+) as {
+  version: string;
+  license: string;
+  author: { name: string };
+};
+const aboutWidth = 64;
+const aboutHeight = 12;
+
+function terminalLink(url: string): string {
+  return `\x1b]8;;${url}\x1b\\${url}\x1b]8;;\x1b\\`;
+}
 
 const numericLabels = {
   publisherCount: "Publisher count",
@@ -466,7 +473,15 @@ export function App() {
           </Box>
           <Text color="white">ZMQT-Capacity {version}</Text>
           <Text color="white">License {license}</Text>
-          <Text color="white">{repositoryUrl}</Text>
+          <Text color="white">Author: {author.name}</Text>
+          <Text color="white">Contact|Support:</Text>
+          <Text color="white" underline>
+            {terminalLink("https://www.linkedin.com/in/sedoykin")}
+          </Text>
+          <Text color="white" underline>
+            {terminalLink("https://github.com/Krusty84")}
+          </Text>
+          <Text color="white" bold>Warning: Estimates are approximate and for guidance only.</Text>
           <Box ref={closeAbout} alignSelf="flex-end">
             <Text bold color="white">&gt; [Close]</Text>
           </Box>
