@@ -68,9 +68,9 @@ const choiceLabels = {
 };
 
 const radioChoices = [
+  ...serializations.map((value) => ({ field: "serialization" as const, value })),
   ...publisherLanguages.map((value) => ({ field: "publisherLanguage" as const, value })),
   ...subscriberLanguages.map((value) => ({ field: "subscriberLanguage" as const, value })),
-  ...serializations.map((value) => ({ field: "serialization" as const, value })),
 ].map((choice) => ({ ...choice, id: `${choice.field}:${choice.value}` }));
 const focusOrder = [
   "publisherCount",
@@ -403,7 +403,9 @@ export function App() {
           width={formWidth}
           flexShrink={0}
         >
-          <Box marginBottom={1}><Text bold>System parameters</Text></Box>
+          <Box marginBottom={rows === 24 && session.menu ? 0 : 1}>
+            <Text bold>Initial values</Text>
+          </Box>
           {numberField("publisherCount", contentWidth)}
           <Box gap={1}>
             {numberField("messageSize", numberWidth)}
@@ -413,9 +415,10 @@ export function App() {
             {numberField("messageFrequency", numberWidth)}
             {menuField("frequencyUnit", "Period")}
           </Box>
-          {radioGroup("publisherLanguage", "Publisher language")}
-          {radioGroup("subscriberLanguage", "Subscriber language")}
           {radioGroup("serialization", "Message format")}
+          {radioGroup("publisherLanguage", "Publisher language")}
+          <Box height={1} flexShrink={0} />
+          {radioGroup("subscriberLanguage", "Subscriber language")}
         </Box>
         <Box
           flexDirection="column"
@@ -424,7 +427,7 @@ export function App() {
           width={columns - formWidth - 1}
           flexShrink={0}
         >
-          <Box justifyContent="space-between" height={1} marginBottom={1} flexShrink={0}>
+          <Box gap={1} height={1} marginBottom={1} flexShrink={0}>
             <Text bold>Estimated results</Text>
             <Box ref={target("report")}>
               <Text bold={session.focus === "report"}>

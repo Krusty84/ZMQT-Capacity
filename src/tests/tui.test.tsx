@@ -49,7 +49,7 @@ function renderTui() {
     const text = chunk.toString();
     output += text;
     const stripped = stripVTControlCharacters(text);
-    if (stripped.includes("System parameters") || stripped.includes("Enlarge the terminal")) {
+    if (stripped.includes("Initial values") || stripped.includes("Enlarge the terminal")) {
       frame = stripped;
     }
   });
@@ -95,8 +95,10 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
   const tui = renderTui();
   try {
     await tui.waitFor("6.144 MB/s");
-    expect(tui.frame).toMatch(/System parameters[^\n]*Estimated results/);
+    expect(tui.frame).toMatch(/Initial values[^\n]*Estimated results {3}\[Details\]/);
     expect(tui.frame.split("\n")[2]).toMatch(/│ +│$/);
+    expect(tui.frame).toMatch(/Send frequency[^\n]*\n[^\n]*\n│ Message format/);
+    expect(tui.frame).toMatch(/Publisher language[^\n]*\n[^\n]*\n[^\n]*\n│ +│[^\n]*\n│ Subscriber language/);
     expect(tui.frame).toContain("6,000 msg/s");
     expect(tui.frame).toContain("11.4–68.4%");
     expect(tui.frame).toContain("604–1,114 MiB");
@@ -110,6 +112,7 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
 
     tui.stdin.write("\t\r\x1b[A"); // Open Size unit and highlight B.
     await tui.waitFor("> B");
+    expect(tui.frame.split("\n")[20]).toContain("C++ — libzmq / cppzmq");
     tui.stdin.write("\x1b");
     await tui.waitFor("> KiB ▾");
     expect(tui.frame).toContain("3.072 MB/s");
@@ -118,6 +121,8 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
     await tui.waitFor("Size must convert to a whole number");
     tui.stdin.write("\r\x1b[B\r");
     await tui.waitFor("3.072 MB/s");
+    tui.stdin.write("\t\x1b[B\x1b[B");
+    await tui.waitFor("> (o) JSON");
 
     tui.resize(79);
     await tui.waitFor("Enlarge the terminal");
@@ -149,7 +154,7 @@ test("uses mouse coordinates for editing, selection and report scrolling", async
     await tui.waitFor("One publisher — C++");
     tui.stdin.write(tui.mouseAt("[Details]"));
     await tui.waitFor("Preliminary ZeroMQ estimate");
-    expect(tui.frame).toMatch(/System parameters[^\n]*Estimated results/);
+    expect(tui.frame).toContain("Estimated results > [Summary]");
 
     tui.stdin.write(tui.mouseAt("Preliminary ZeroMQ estimate", 65));
     await vi.waitFor(() => expect(tui.frame).not.toContain("Preliminary ZeroMQ estimate"));
