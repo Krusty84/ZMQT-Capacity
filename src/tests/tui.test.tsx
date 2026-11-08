@@ -8,9 +8,11 @@ import process from "node:process";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import { render } from "ink";
+import { render, renderToString } from "ink";
 import { expect, test, vi } from "vitest";
 import { App } from "../tui/app.js";
+import { DetailedReport } from "../tui/report.js";
+import { calculate } from "./fixtures.js";
 
 const bin = fileURLToPath(new URL("../../dist/tui/main.js", import.meta.url));
 
@@ -99,9 +101,14 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
     expect(tui.frame.split("\n")[2]).toMatch(/│ +│$/);
     expect(tui.frame).toMatch(/Send frequency[^\n]*\n[^\n]*\n│ Message format/);
     expect(tui.frame).toMatch(/Publisher language[^\n]*\n[^\n]*\n[^\n]*\n│ +│[^\n]*\n│ Subscriber language/);
-    expect(tui.frame).toContain("6,000 msg/s");
+    expect(tui.frame).toMatch(/Metric +Estimate │/);
+    expect(tui.frame).toContain("6,000 msg/s │");
+    expect(tui.frame).toContain("0.05–0.3%");
+    expect(tui.frame).toContain("30–100 MiB");
     expect(tui.frame).toContain("11.4–68.4%");
+    expect(tui.frame).toContain("281–684 MiB");
     expect(tui.frame).toContain("604–1,114 MiB");
+    expect(tui.frame).toContain("RAM excludes OS network buffers.");
 
     tui.stdin.write("\x1b[B\x7f"); // Down to Message size and erase its value.
     await tui.waitFor("Expected a positive finite number.");
@@ -169,6 +176,56 @@ test("uses mouse coordinates for editing, selection and report scrolling", async
     expect(tui.stdin.setRawMode).toHaveBeenLastCalledWith(false);
   } finally {
     await tui.close();
+  }
+});
+
+test("adapts the scenario tables to the terminal and scrolls through the report", async () => {
+  const tui = renderTui();
+  try {
+    await tui.waitFor("6.144 MB/s");
+    tui.stdin.write(tui.mouseAt("[Details]"));
+    await tui.waitFor("Preliminary ZeroMQ estimate");
+
+    tui.stdin.write("\x1b[6~");
+    await tui.waitFor("Scenario");
+    expect(tui.frame).toMatch(/Scenario +Estimate/);
+    expect(tui.frame).toMatch(/Low +0\.0005/);
+    expect(tui.frame).toMatch(/Nominal +0\.001/);
+    expect(tui.frame).toMatch(/High +0\.003/);
+
+    tui.resize(100, 31);
+    await vi.waitFor(() => expect(tui.frame).toMatch(/Metric +Low +Nominal +High/));
+    expect(tui.frame).toMatch(/CPU, % of one core +11\.4 +22\.8 +68\.4/);
+
+    tui.stdin.write("\x1b[6~");
+    await tui.waitFor("Assumptions");
+    expect(tui.frame).toContain("Warnings");
+    tui.stdin.write("\x1b[6~".repeat(3));
+    await tui.waitFor("suitability for hard real-time use.");
+  } finally {
+    await tui.close();
+  }
+});
+
+test("preserves long numbers when the scenario columns no longer fit", () => {
+  const result = calculate({
+    publisherCount: Number.MAX_SAFE_INTEGER,
+    messageSize: Number.MAX_SAFE_INTEGER,
+    messageFrequency: 0,
+  });
+  const highRam = result.subscriber.ramFullMiBHigh.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  for (const width of [36, 46]) {
+    const report = stripVTControlCharacters(renderToString(
+      <DetailedReport result={result} width={width} />,
+      { columns: width },
+    ));
+    expect(report).toMatch(/Scenario +Estimate/);
+    expect(report).not.toMatch(/Metric +Low +Nominal +High/);
+    expect(report.replace(/\s/g, "")).toContain(highRam);
+    expect(report.split("\n").every((line) => line.length <= width)).toBe(true);
   }
 });
 

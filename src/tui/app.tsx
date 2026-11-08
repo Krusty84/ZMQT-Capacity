@@ -28,7 +28,7 @@ import {
 } from "../models/input.js";
 import { useMouse } from "./mouse.js";
 import { numericParsers } from "./parse.js";
-import { formatDetails, formatSummary } from "./report.js";
+import { DetailedReport, SummaryReport } from "./report.js";
 
 const { version, license, author } = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
@@ -202,7 +202,7 @@ function handleKey(session: Session, input: string, key: Key): Session {
   return isNumericField(focus) ? editNumber(session, focus, input, key) : session;
 }
 
-function formatResult({ form, details }: Session): string {
+function renderResult({ form, details }: Session, width: number) {
   const estimate = estimateCapacity({
     ...form,
     publisherCount: numericParsers.publisherCount(form.publisherCount.trim()),
@@ -210,11 +210,12 @@ function formatResult({ form, details }: Session): string {
     messageFrequency: numericParsers.messageFrequency(form.messageFrequency.trim()),
   });
   if (estimate.ok) {
-    return details ? formatDetails(estimate.result) : formatSummary(estimate.result);
+    const Report = details ? DetailedReport : SummaryReport;
+    return <Report result={estimate.result} width={width} />;
   }
   const { field, message } = estimate.error;
   const label = isNumericField(field) ? numericLabels[field] : `Calculation error (${field})`;
-  return `${label}\n${message}`;
+  return <Text>{`${label}\n${message}`}</Text>;
 }
 
 const optionPrefix = "option:";
@@ -242,7 +243,7 @@ export function App() {
 
   function scrollBy(amount: number) {
     setSession((current) => {
-      if (current.aboutOpen || !current.details) return current;
+      if (current.aboutOpen || maxScroll === 0) return current;
       const top = Math.min(current.scrollTop, maxScroll);
       return { ...current, scrollTop: Math.max(0, Math.min(top + amount, maxScroll)) };
     });
@@ -321,6 +322,7 @@ export function App() {
   }
 
   const formWidth = Math.floor((columns - 1) / 2);
+  const resultsWidth = columns - formWidth - 1;
   const contentWidth = formWidth - 4;
   const numberWidth = Math.floor((contentWidth - 1) / 2);
   const menuWidth = contentWidth - numberWidth - 1;
@@ -424,7 +426,7 @@ export function App() {
           flexDirection="column"
           borderStyle="round"
           paddingX={1}
-          width={columns - formWidth - 1}
+          width={resultsWidth}
           flexShrink={0}
         >
           <Box gap={1} height={1} marginBottom={1} flexShrink={0}>
@@ -444,7 +446,7 @@ export function App() {
             contentOffsetY={scrollTop}
           >
             <Box ref={report} flexDirection="column" flexShrink={0}>
-              <Text>{formatResult(session)}</Text>
+              {renderResult(session, resultsWidth - 4)}
             </Box>
           </Box>
         </Box>
