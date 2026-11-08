@@ -109,12 +109,12 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
     expect(tui.frame).toContain("Java — Spring Boot + JeroMQ");
     expect(tui.frame.split("\n")[1]).toMatch(/Initial values.*Estimated results +\[Export\] │$/);
     expect(tui.frame.split("\n")[2]).toMatch(/│ {3}\[Explanations\] +│$/);
-    expect(tui.frame).toMatch(/Send frequency[^\n]*\n[^\n]*\n│ Message format/);
+    expect(tui.frame).toMatch(/^│ Publisher count[^\n]*\n[^\n]*\n│ Message format +\[Load payload\][^\n]*\n[^\n]*\n│ Message size/m);
     expect(tui.frame).toMatch(/Publisher language[^\n]*\n[^\n]*\n[^\n]*\n│ +│[^\n]*\n│ Subscriber language/);
     expect(tui.frame).toMatch(/│Metric +│ *Estimate│/);
     expect(tui.frame).toMatch(/│CPU time per message +│ +38 µs│/);
 
-    tui.stdin.write("\x1b[B\x7f"); // Down to Message size and erase its value.
+    tui.stdin.write("\x1b[B".repeat(4) + "\x7f"); // Down to Message size and erase its value.
     await tui.waitFor("Expected a positive finite number.");
     expect(tui.frame).not.toContain("38 µs");
     await vi.waitFor(() => expect(tui.frame).not.toMatch(/[█░]/));
@@ -133,7 +133,7 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
     await tui.waitFor("Size must convert to a whole number");
     tui.stdin.write("\r\x1b[B\r");
     await tui.waitFor("29 µs");
-    tui.stdin.write("\t\x1b[B\x1b[B");
+    tui.stdin.write("\x1b[Z" + "\x1b[A".repeat(3));
     await tui.waitFor("> (o) JSON");
 
     tui.resize(79);
@@ -442,6 +442,97 @@ test("centers the About dialog and isolates its input", async () => {
   }
 });
 
+test("loads compact UTF-8 JSON by keyboard and exports the measured size", async () => {
+  const workingDirectory = process.cwd();
+  const directory = fs.mkdtempSync(join(tmpdir(), "zmqt-payload-"));
+  const samples = join(directory, "samples");
+  fs.mkdirSync(samples);
+  fs.writeFileSync(join(samples, "json-sample"), '{\n  "name": "Пример"\n}\n', "utf8");
+  const tui = renderTui();
+  try {
+    process.chdir(directory);
+    await tui.waitFor("38 µs");
+    expect(tui.frame).toMatch(/Message format +\[Load payload\]/);
+
+    tui.stdin.write("\t".repeat(3) + "\r");
+    await tui.waitFor("Load JSON payload");
+    tui.stdin.write("\x1b[B\r"); // Enter the samples folder.
+    await tui.waitFor("json-sample");
+    tui.stdin.write("\x1b[B\r");
+    await tui.waitFor("> [Load payload]");
+    expect(tui.frame).toMatch(/^│ +23 +B ▾/m);
+    tui.stdin.write("\x1b[<0;79;21M"); // Jump to Traffic at the end of the report.
+    await vi.waitFor(() => expect(tui.frame).toMatch(/│6,000 +│ +0\.138│ +1\.104│/));
+
+    const filename = "300_23B_20perSecond.txt";
+    tui.stdin.write(tui.mouseAt("[Export]"));
+    await tui.waitFor(filename);
+    tui.stdin.write(tui.mouseAt("[Ok]"));
+    await tui.waitFor("Report saved");
+    const report = fs.readFileSync(join(directory, filename), "utf8");
+    expect(report).toContain("Message size 23 B\n");
+    expect(report).toContain("Message format JSON\n");
+
+    tui.stdin.write(tui.mouseAt("Message size") + "4");
+    await vi.waitFor(() => expect(tui.frame).toMatch(/^│ > 234 +B ▾/m));
+  } finally {
+    await tui.close();
+    process.chdir(workingDirectory);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("reports payload errors and lets the user cancel or load a Protobuf file by mouse", async () => {
+  const workingDirectory = process.cwd();
+  const directory = fs.mkdtempSync(join(tmpdir(), "zmqt-payload-"));
+  const missing = join(directory, "gone.bin");
+  fs.writeFileSync(join(directory, "bad-json"), "{", "utf8");
+  fs.writeFileSync(join(directory, "invalid-utf8"), Uint8Array.of(0x22, 0xc3, 0x22));
+  fs.writeFileSync(join(directory, "empty.bin"), "");
+  fs.writeFileSync(missing, Uint8Array.of(0x08, 0x01));
+  fs.writeFileSync(join(directory, "sample.bin"), Uint8Array.of(0x08, 0x96, 0x01));
+  const tui = renderTui();
+  try {
+    process.chdir(directory);
+    await tui.waitFor("38 µs");
+    tui.stdin.write(tui.mouseAt("[Load payload]"));
+    await tui.waitFor("Load JSON payload");
+    tui.stdin.write(tui.mouseAt("bad-json"));
+    await tui.waitFor("Expected valid UTF-8 JSON.");
+    tui.stdin.write(tui.mouseAt("invalid-utf8"));
+    await tui.waitFor("> invalid-utf8");
+    expect(tui.frame).toContain("Expected valid UTF-8 JSON.");
+    tui.stdin.write("\x1b");
+    await tui.waitFor("> [Load payload]");
+    expect(tui.frame).toMatch(/^│ +1 +KiB ▾/m);
+
+    tui.stdin.write(tui.mouseAt("( ) Protobuf"));
+    await tui.waitFor("> (o) Protobuf");
+    tui.stdin.write(tui.mouseAt("[Load payload]"));
+    await tui.waitFor("Load Protobuf payload");
+    tui.stdin.write(tui.mouseAt("[Cancel]"));
+    await tui.waitFor("> [Load payload]");
+    expect(tui.frame).toMatch(/^│ +1 +KiB ▾/m);
+
+    tui.stdin.write(tui.mouseAt("[Load payload]"));
+    await tui.waitFor("Load Protobuf payload");
+    tui.stdin.write(tui.mouseAt("empty.bin"));
+    await tui.waitFor("Protobuf payload is empty.");
+    fs.unlinkSync(missing);
+    tui.stdin.write(tui.mouseAt("gone.bin"));
+    await tui.waitFor("Cannot read payload (ENOENT).");
+    tui.stdin.write(tui.mouseAt("sample.bin"));
+    await tui.waitFor("> [Load payload]");
+    expect(tui.frame).toMatch(/^│ +3 +B ▾/m);
+    tui.stdin.write("\x1b[<0;79;21M");
+    await vi.waitFor(() => expect(tui.frame).toMatch(/│6,000 +│ +0\.018│ +0\.144│/));
+  } finally {
+    await tui.close();
+    process.chdir(workingDirectory);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("exports both report sections and the current inputs to a selected folder", async () => {
   const workingDirectory = process.cwd();
   const directory = fs.mkdtempSync(join(tmpdir(), "zmqt-export-"));
@@ -451,7 +542,7 @@ test("exports both report sections and the current inputs to a selected folder",
   try {
     process.chdir(directory);
     await tui.waitFor("38 µs");
-    tui.stdin.write("1\x1b[B\x7f\x1b[200~0,5\x1b[201~");
+    tui.stdin.write("1" + "\x1b[B".repeat(4) + "\x7f\x1b[200~0,5\x1b[201~");
     await tui.waitFor("29 µs");
     tui.stdin.write(tui.mouseAt("Period"));
     await tui.waitFor("Second ▴");

@@ -29,6 +29,7 @@ import {
 import { ExportDialog, type ReportExport } from "./export.js";
 import { useMouse, type MouseEvent } from "./mouse.js";
 import { numericParsers } from "./parse.js";
+import { PayloadDialog } from "./payload.js";
 import { ExplanationsReport, SummaryReport } from "./report.js";
 
 const { version, license, author } = JSON.parse(
@@ -75,11 +76,13 @@ const radioChoices = [
 ].map((choice) => ({ ...choice, id: `${choice.field}:${choice.value}` }));
 const focusOrder = [
   "publisherCount",
+  ...radioChoices.filter(({ field }) => field === "serialization").map(({ id }) => id),
+  "loadPayload",
   "messageSize",
   "messageSizeUnit",
   "messageFrequency",
   "frequencyUnit",
-  ...radioChoices.map(({ id }) => id),
+  ...radioChoices.filter(({ field }) => field !== "serialization").map(({ id }) => id),
   "export",
   "report",
   "about",
@@ -96,6 +99,7 @@ interface Session {
   showExplanations: boolean;
   scrollTop: number;
   aboutOpen: boolean;
+  payloadOpen: boolean;
   exportReport?: ReportExport;
   reportSaved?: boolean;
 }
@@ -117,6 +121,7 @@ const initialSession: Session = {
   showExplanations: false,
   scrollTop: 0,
   aboutOpen: false,
+  payloadOpen: false,
 };
 
 function isNumericField(id: string): id is NumericField {
@@ -150,6 +155,7 @@ function selectOption(session: Session, field: MenuField, index: number): Sessio
 function activate(session: Session): Session {
   const { focus, form } = session;
   if (focus === "about") return { ...session, aboutOpen: true };
+  if (focus === "loadPayload") return { ...session, payloadOpen: true };
   if (focus === "export") {
     const exportReport = prepareExport(form);
     return exportReport ? { ...session, exportReport, reportSaved: false } : session;
@@ -191,7 +197,7 @@ function editNumber(session: Session, field: NumericField, input: string, key?: 
 }
 
 function handleKey(session: Session, input: string, key: Key): Session {
-  if (session.exportReport) return session;
+  if (session.payloadOpen || session.exportReport) return session;
   const { focus, menu } = session;
   const direction = key.upArrow ? -1 : key.downArrow ? 1 : 0;
   const confirm = key.return || input === "\r" || input === " ";
@@ -261,6 +267,7 @@ export function App() {
   const { columns, rows } = useWindowSize();
   const { exit } = useApp();
   const fits = columns >= 80 && rows >= 24;
+  const fileDialogOpen = session.payloadOpen || session.exportReport !== undefined;
   // Reserve one row for the footer and one for Ink's trailing newline.
   const panelHeight = rows - 2;
   const pageHeight = panelHeight - 4;
@@ -269,7 +276,7 @@ export function App() {
   const report = useRef<DOMElement>(null);
   const scrollbar = useRef<DOMElement>(null);
   const closeAbout = useRef<DOMElement>(null);
-  const exportMouse = useRef<((event: MouseEvent) => void) | null>(null);
+  const dialogMouse = useRef<((event: MouseEvent) => void) | null>(null);
   const { height: reportHeight } = useBoxMetrics(report);
   const maxScroll = Math.max(0, reportHeight - pageHeight);
   const scrollTop = Math.min(session.scrollTop, maxScroll);
@@ -280,7 +287,7 @@ export function App() {
     // The layout can be ready before the metrics hook updates.
     const limit = Math.max(0, measureElement(content).height - pageHeight);
     setSession((current) => {
-      if (current.aboutOpen || current.exportReport || limit === 0) return current;
+      if (current.aboutOpen || current.payloadOpen || current.exportReport || limit === 0) return current;
       const top = Math.min(current.scrollTop, limit);
       return { ...current, scrollTop: Math.max(0, Math.min(getOffset(top, limit), limit)) };
     });
@@ -292,7 +299,7 @@ export function App() {
       exit(130);
       return;
     }
-    if (!fits || session.exportReport || key.ctrl || key.meta || key.super || key.hyper) return;
+    if (!fits || fileDialogOpen || key.ctrl || key.meta || key.super || key.hyper) return;
     if (key.pageUp || key.pageDown) {
       scrollTo((top) => top + (key.pageUp ? -pageHeight : pageHeight));
       return;
@@ -305,14 +312,17 @@ export function App() {
   });
   usePaste((input) => {
     if (!fits) return;
-    setSession((current) => !current.aboutOpen && !current.exportReport && isNumericField(current.focus)
-      ? editNumber(current, current.focus, input.trim())
-      : current);
+    setSession((current) => {
+      if (current.aboutOpen || current.payloadOpen || current.exportReport || !isNumericField(current.focus)) {
+        return current;
+      }
+      return editNumber(current, current.focus, input.trim());
+    });
   });
   useMouse((event) => {
     if (!fits) return;
-    if (session.exportReport) {
-      exportMouse.current?.(event);
+    if (fileDialogOpen) {
+      dialogMouse.current?.(event);
       return;
     }
     const { action, x, y } = event;
@@ -346,7 +356,7 @@ export function App() {
       if (!contains(area)) continue;
 
       setSession((current) => {
-        if (current.aboutOpen || current.exportReport) return current;
+        if (current.aboutOpen || current.payloadOpen || current.exportReport) return current;
         if (id.startsWith(optionPrefix)) {
           return current.menu
             ? selectOption(current, current.menu.field, Number(id.slice(optionPrefix.length)))
@@ -374,7 +384,7 @@ export function App() {
   const contentWidth = formWidth - 4;
   const numberWidth = Math.floor((contentWidth - 1) / 2);
   const menuWidth = contentWidth - numberWidth - 1;
-  const modalOpen = session.aboutOpen || session.exportReport !== undefined;
+  const modalOpen = session.aboutOpen || fileDialogOpen;
   const marker = (id: string) => !modalOpen && session.focus === id ? "> " : "  ";
 
   let scrollbarText = "";
@@ -439,7 +449,16 @@ export function App() {
     const inline = field === "serialization";
     return (
       <Box flexDirection="column">
-        <Text>{label}</Text>
+        <Box justifyContent="space-between">
+          <Text>{label}</Text>
+          {inline && (
+            <Box ref={target("loadPayload")}>
+              <Text bold={!modalOpen && session.focus === "loadPayload"}>
+                {marker("loadPayload")}[Load payload]
+              </Text>
+            </Box>
+          )}
+        </Box>
         <Box flexDirection={inline ? "row" : "column"} gap={inline ? 1 : 0}>
           {radioChoices.filter((choice) => choice.field === field).map(({ id, value }) => (
             <Box key={id} ref={target(id)}>
@@ -478,6 +497,7 @@ export function App() {
             <Text bold>Initial values</Text>
           </Box>
           {numberField("publisherCount", contentWidth)}
+          {radioGroup("serialization", "Message format")}
           <Box gap={1}>
             {numberField("messageSize", numberWidth)}
             {menuField("messageSizeUnit", "Size unit")}
@@ -486,7 +506,6 @@ export function App() {
             {numberField("messageFrequency", numberWidth)}
             {menuField("frequencyUnit", "Period")}
           </Box>
-          {radioGroup("serialization", "Message format")}
           {radioGroup("publisherLanguage", "Publisher language")}
           <Box height={1} flexShrink={0} />
           {radioGroup("subscriberLanguage", "Subscriber language")}
@@ -582,13 +601,26 @@ export function App() {
   return (
     <>
       {screen}
+      {session.payloadOpen && (
+        <PayloadDialog
+          serialization={session.form.serialization}
+          columns={columns}
+          panelHeight={panelHeight}
+          visible={fits}
+          mouseHandler={dialogMouse}
+          onClose={(bytes) => setSession((current) => {
+            const next = { ...current, payloadOpen: false };
+            return bytes === undefined ? next : updateForm(next, { messageSize: String(bytes), messageSizeUnit: "B" });
+          })}
+        />
+      )}
       {session.exportReport && (
         <ExportDialog
           report={session.exportReport}
           columns={columns}
           panelHeight={panelHeight}
           visible={fits}
-          mouseHandler={exportMouse}
+          mouseHandler={dialogMouse}
           onClose={(saved) => setSession((current) => ({ ...current, exportReport: undefined, reportSaved: saved }))}
         />
       )}

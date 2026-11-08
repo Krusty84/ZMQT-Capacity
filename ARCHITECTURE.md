@@ -43,14 +43,22 @@ The runtime needs Node.js 24. TypeScript, Node.js types, Vitest, and fast-check 
 
 The TUI shows the panels at 80 columns and 24 rows or larger. The form takes 37 columns. The results panel fills the space to its right after a one-column gap. `App` keeps form text, focus, the report view, and scroll position in one session. When it renders the results panel, it parses numeric fields and calls `estimateCapacity`. Errors appear in Estimated results. [App](src/tui/app.tsx), [numeric parser](src/tui/parse.ts).
 
-- **Summary** lists subscriber CPU and RAM, subscriber capacity, one publisher's CPU and RAM, traffic, and normalized input. Traffic uses `msg/s`, `MB/s`, and `Mbps`.
-- **Explanations** shows model and profile versions, how the CPU and RAM scenarios are calculated, warnings, and assumptions.
+- **Summary** lists subscriber CPU and RAM, subscriber capacity, one publisher's CPU and RAM, and traffic. Traffic uses `msg/s`, `MB/s`, and `Mbps`.
+- **Explanations** describes the CPU and RAM scenarios and lists warnings and assumptions.
 
 Tables use full labels when every label fits in `Metric`. Otherwise, the whole table uses compact labels. CPU and RAM use `Low`, `Nominal`, and `High` columns when the numeric columns and borders leave at least 10 columns for `Metric`. With less space, each metric gets a vertical scenario table. Long values wrap in their cells. [Report components](src/tui/report.tsx).
 
 When the report is taller than its viewport, a scrollbar uses the right padding column. The thumb shows the visible fraction and current offset. PgUp/PgDn and the wheel update the offset within the available scroll range. A track click jumps in proportion to its position. Input edits and view changes reset the offset.
 
-The mouse hook decodes SGR click and wheel events. `App` matches their coordinates to rendered controls. The About dialog takes input while open. [Mouse input](src/tui/mouse.ts).
+The mouse hook decodes SGR click and wheel events. `App` routes them to the open dialog or matches their coordinates to controls in the main view. [Mouse input](src/tui/mouse.ts).
+
+### File dialogs
+
+**Message format** and **Load payload** sit between **Publisher count** and **Message size**. The payload dialog uses the selected format to measure one message. For JSON, it validates UTF-8, parses the value, and counts the UTF-8 bytes after compact serialization. For Protobuf, it uses the size of the open binary file. On success, `App` records the byte count in `messageSize` and sets `messageSizeUnit` to `B`. The dialog reports errors and lets the user choose another file. [Payload dialog](src/tui/payload.tsx).
+
+**Export** captures the current valid inputs and estimate. The user selects a folder and can edit the suggested file name. The dialog saves the report time, initial values, summary, and explanations as UTF-8 text. It uses exclusive file creation. If a write fails, it attempts to remove the partial file. [Export dialog](src/tui/export.tsx).
+
+Both dialogs start in the working directory. The shared reader lists folders for export and adds regular files for payload import. [Directory reader](src/tui/files.ts).
 
 ## Input and units
 
@@ -213,7 +221,7 @@ Keep coefficients in profiles so they can change independently of the formulas. 
 - RAM estimates target resident process memory. Keep RSS, JVM heap, native memory, kernel buffers, and virtual address space separate. The Java profile estimates the process as a whole. Heap size and `-Xmx` are separate settings. More heap, threads, allocations, or Spring Boot components can increase RAM above the high estimate.
 - The RAM model excludes kernel TCP buffers, unbounded application queues, cached telemetry, extra copies, large temporary allocations, business logic, OS services, changes due to GC tuning, and nonresident virtual memory.
 - PUB/SUB can lose messages under overload, so the delivered rate can differ from `R`. HWM describes a depth, and the retained messages depend on queue behavior. Delivery guarantees, retention of the last `N` messages, latency percentiles, response time, and hard real-time behavior are outside the model.
-- The input describes one class of sources with one frame per message. Production publisher and subscriber processes, arbitrary JSON or Protobuf size estimation, multipart framing, and hardware detection are outside the calculation.
+- The input describes one class of sources with one frame per message. Production publisher and subscriber processes, multipart framing, and hardware detection are outside the calculation.
 
 ## Reference case and validation
 
@@ -226,7 +234,7 @@ The specification reference uses 300 Python publishers, one Java subscriber, JSO
 | Subscriber RAM at `Q_window`, MiB | 281.34 | 482.57 | 683.79 |
 | Subscriber RAM at `Q_full`, MiB | 604.34 | 859.40 | 1114.45 |
 
-`npm run build` writes the library, CLI, and type declarations to `dist/`. `npm run run` starts the built CLI. Run `npm run typecheck` and `npm test` with Node.js 24. The test command builds the package first. [Package configuration](package.json).
+`npm run build` writes the library, CLI, and type declarations to `dist/`. `npm start` starts the built CLI. Run `npm run typecheck` and `npm test` with Node.js 24. The test command builds the package first. [Package configuration](package.json).
 
 The integration test rounds subscriber RAM estimates to two decimal places and compares them with the reference values within 0.01 MiB. Use explicit, stricter tolerances for unit tests. [Reference test](src/tests/integration.test.ts).
 
@@ -235,7 +243,7 @@ The integration test rounds subscriber RAM estimates to two decimal places and c
 - With fixed coefficients, more publishers cannot reduce total traffic or subscriber RAM. A higher rate cannot reduce CPU work. A larger message cannot reduce payload traffic or queue RAM. Check `low ≤ nominal ≤ high` for CPU and RAM, `Q_window ≤ HWM`, and zero CPU work at zero rate.
 - A publisher language change leaves traffic and subscriber estimates equal. A subscriber language change leaves publisher estimates equal. At the same input size, JSON and Protobuf use the same payload size.
 - Check one and many publishers, minimum and maximum byte sizes, zero and fractional rates, and numeric limits. Check structured errors for negatives, `NaN`, infinity, missing fields, unknown choices, and invalid configuration versions. Check the reference case after changes to formulas or coefficients.
-- The TUI tests cover terminal checks, input handling, report widths, scrolling by key and mouse, scrollbar visibility, and the About dialog. [TUI tests](src/tests/tui.test.tsx).
+- The TUI tests cover terminal checks, keyboard and mouse input, report layout and scrolling, the About dialog, payload import, and report export. [TUI tests](src/tests/tui.test.tsx).
 
 The tests run without a network or special hardware. Field measurements can calibrate the model separately.
 

@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { closeSync, openSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { closeSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
 import { stripVTControlCharacters } from "node:util";
 import { Box, measureElement, renderToString, Text, useInput, usePaste, type DOMElement, type Key } from "ink";
 import { useImperativeHandle, useRef, useState, type Ref } from "react";
 import type { CapacityEstimate } from "../models/result.js";
+import { displayText, errorReason, readDirectory } from "./files.js";
 import type { MouseEvent } from "./mouse.js";
 import { ExplanationsReport, SummaryReport } from "./report.js";
 
@@ -57,31 +58,9 @@ interface DialogState {
   error?: string;
 }
 
-function displayText(value: string): string {
-  return value.replace(/\p{Cc}/gu, "�");
-}
-
-function errorReason(error: unknown): string {
-  const code = error instanceof Error ? (error as NodeJS.ErrnoException).code : undefined;
-  return displayText(code ?? String(error));
-}
-
 function openFolder(directory: string) {
-  const parent = dirname(directory) === directory ? [] : [".."];
-  try {
-    const names = readdirSync(directory, { withFileTypes: true }).filter((entry) => {
-      if (entry.isDirectory()) return true;
-      if (!entry.isSymbolicLink()) return false;
-      try {
-        return statSync(join(directory, entry.name)).isDirectory();
-      } catch {
-        return false;
-      }
-    }).map(({ name }) => name).sort((a, b) => a.localeCompare(b));
-    return { directory, folders: [...parent, ...names], selected: 0, error: undefined };
-  } catch (error) {
-    return { directory, folders: parent, selected: 0, error: `Cannot open folder (${errorReason(error)}).` };
-  }
+  const { entries, error } = readDirectory(directory, "folders");
+  return { directory, folders: entries.map(({ name }) => name), selected: 0, error };
 }
 
 function moveSelection(state: DialogState, offset: number): DialogState {

@@ -12,6 +12,8 @@ ZMQT-Capacity is a tool for preliminary capacity estimates. It models identical 
 - Estimate low, nominal, and high CPU load and RAM use for one publisher and the subscriber. Estimate RAM for the buffer window and for queues at the high-water mark (HWM).
 - Estimate the throughput of one subscriber handler and how many messages go unserved during the buffer window. Report overload and possible message loss.
 - Select Python or C++ profiles for publishers and Java, Python, or C++ profiles for the subscriber. Use JSON or Protobuf serialization.
+- Use **Load payload** to set **Message size** from a JSON or binary Protobuf sample. The tool compacts JSON before it counts UTF-8 bytes.
+- Export estimated results to a text file.
 
 ## Who is it for?
 

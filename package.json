@@ -2,7 +2,7 @@
   "name": "zmqt-capacity",
   "version": "1.0.0",
   "license": "MIT",
-  "description": "A capacity analysis tool for ...",
+  "description": "A capacity analysis tool for ZMQ protocol implementations in your system.",
   "author": {
     "name": "Alexey Sedoykin",
     "url": "https://www.sedoykin.com/"
