@@ -28,7 +28,7 @@ import {
 } from "../models/input.js";
 import { useMouse } from "./mouse.js";
 import { numericParsers } from "./parse.js";
-import { DetailedReport, SummaryReport } from "./report.js";
+import { ExplanationsReport, SummaryReport } from "./report.js";
 
 const { version, license, author } = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
@@ -91,7 +91,7 @@ interface Session {
   focus: string;
   cursor: number;
   menu?: { field: MenuField; index: number };
-  details: boolean;
+  showExplanations: boolean;
   scrollTop: number;
   aboutOpen: boolean;
 }
@@ -110,7 +110,7 @@ const initialSession: Session = {
   form: defaultForm,
   focus: "publisherCount",
   cursor: defaultForm.publisherCount.length,
-  details: false,
+  showExplanations: false,
   scrollTop: 0,
   aboutOpen: false,
 };
@@ -147,7 +147,7 @@ function activate(session: Session): Session {
   const { focus, form } = session;
   if (focus === "about") return { ...session, aboutOpen: true };
   if (focus === "report") {
-    return { ...session, details: !session.details, scrollTop: 0 };
+    return { ...session, showExplanations: !session.showExplanations, scrollTop: 0 };
   }
   if (focus === "messageSizeUnit" || focus === "frequencyUnit") {
     const options: readonly string[] = menuOptions[focus];
@@ -202,7 +202,7 @@ function handleKey(session: Session, input: string, key: Key): Session {
   return isNumericField(focus) ? editNumber(session, focus, input, key) : session;
 }
 
-function renderResult({ form, details }: Session, width: number) {
+function renderResult({ form, showExplanations }: Session, width: number) {
   const estimate = estimateCapacity({
     ...form,
     publisherCount: numericParsers.publisherCount(form.publisherCount.trim()),
@@ -210,8 +210,9 @@ function renderResult({ form, details }: Session, width: number) {
     messageFrequency: numericParsers.messageFrequency(form.messageFrequency.trim()),
   });
   if (estimate.ok) {
-    const Report = details ? DetailedReport : SummaryReport;
-    return <Report result={estimate.result} width={width} />;
+    return showExplanations
+      ? <ExplanationsReport metadata={estimate.result.metadata} />
+      : <SummaryReport result={estimate.result} width={width} />;
   }
   const { field, message } = estimate.error;
   const label = isNumericField(field) ? numericLabels[field] : `Calculation error (${field})`;
@@ -236,16 +237,21 @@ export function App() {
   const targets = useRef(new Map<string, DOMElement>());
   const viewport = useRef<DOMElement>(null);
   const report = useRef<DOMElement>(null);
+  const scrollbar = useRef<DOMElement>(null);
   const closeAbout = useRef<DOMElement>(null);
   const { height: reportHeight } = useBoxMetrics(report);
   const maxScroll = Math.max(0, reportHeight - pageHeight);
   const scrollTop = Math.min(session.scrollTop, maxScroll);
 
-  function scrollBy(amount: number) {
+  function scrollTo(getOffset: (top: number, limit: number) => number) {
+    const content = report.current;
+    if (!content) return;
+    // The layout can be ready before the metrics hook updates.
+    const limit = Math.max(0, measureElement(content).height - pageHeight);
     setSession((current) => {
-      if (current.aboutOpen || maxScroll === 0) return current;
-      const top = Math.min(current.scrollTop, maxScroll);
-      return { ...current, scrollTop: Math.max(0, Math.min(top + amount, maxScroll)) };
+      if (current.aboutOpen || limit === 0) return current;
+      const top = Math.min(current.scrollTop, limit);
+      return { ...current, scrollTop: Math.max(0, Math.min(getOffset(top, limit), limit)) };
     });
   }
 
@@ -257,7 +263,7 @@ export function App() {
     }
     if (!fits || key.ctrl || key.meta || key.super || key.hyper) return;
     if (key.pageUp || key.pageDown) {
-      scrollBy(key.pageUp ? -pageHeight : pageHeight);
+      scrollTo((top) => top + (key.pageUp ? -pageHeight : pageHeight));
       return;
     }
     // Ink can deliver consecutive Tab and Enter presses in one text chunk.
@@ -287,9 +293,17 @@ export function App() {
     }
     if (action !== "click") {
       if (viewport.current && contains(measureElement(viewport.current))) {
-        scrollBy(action === "scrollUp" ? -3 : 3);
+        scrollTo((top) => top + (action === "scrollUp" ? -3 : 3));
       }
       return;
+    }
+    if (scrollbar.current) {
+      const track = measureElement(scrollbar.current);
+      if (contains(track)) {
+        const fraction = (y - track.y) / (track.height - 1);
+        scrollTo((_, limit) => Math.round(fraction * limit));
+        return;
+      }
     }
     for (const [id, node] of targets.current) {
       const area = measureElement(node);
@@ -321,12 +335,23 @@ export function App() {
     return <Text>Enlarge the terminal to at least 80 columns and 24 rows. Ctrl+C to exit.</Text>;
   }
 
-  const formWidth = Math.floor((columns - 1) / 2);
+  // The longest option takes 33 columns including its marker.
+  const formWidth = 37;
   const resultsWidth = columns - formWidth - 1;
+  const reportWidth = resultsWidth - 4;
   const contentWidth = formWidth - 4;
   const numberWidth = Math.floor((contentWidth - 1) / 2);
   const menuWidth = contentWidth - numberWidth - 1;
   const marker = (id: string) => !session.aboutOpen && session.focus === id ? "> " : "  ";
+
+  let scrollbarText = "";
+  if (maxScroll > 0) {
+    const thumbHeight = Math.max(1, Math.floor(pageHeight * pageHeight / reportHeight));
+    const thumbTop = Math.round(scrollTop * (pageHeight - thumbHeight) / maxScroll);
+    scrollbarText = Array.from({ length: pageHeight }, (_, row) =>
+      row >= thumbTop && row < thumbTop + thumbHeight ? "█" : "░",
+    ).join("\n");
+  }
 
   function target(id: string) {
     return (node: DOMElement | null) => {
@@ -425,29 +450,35 @@ export function App() {
         <Box
           flexDirection="column"
           borderStyle="round"
-          paddingX={1}
+          paddingLeft={1}
           width={resultsWidth}
           flexShrink={0}
         >
-          <Box gap={1} height={1} marginBottom={1} flexShrink={0}>
+          <Box gap={1} height={1} marginBottom={1} paddingRight={1} flexShrink={0}>
             <Text bold>Estimated results</Text>
             <Box ref={target("report")}>
               <Text bold={session.focus === "report"}>
-                {marker("report")}[{session.details ? "Summary" : "Details"}]
+                {marker("report")}[{session.showExplanations ? "Summary" : "Explanations"}]
               </Text>
             </Box>
           </Box>
-          <Box
-            ref={viewport}
-            flexDirection="column"
-            height={pageHeight}
-            flexShrink={0}
-            overflow="hidden"
-            contentOffsetY={scrollTop}
-          >
-            <Box ref={report} flexDirection="column" flexShrink={0}>
-              {renderResult(session, resultsWidth - 4)}
+          <Box ref={viewport} height={pageHeight} flexShrink={0}>
+            <Box
+              width={reportWidth}
+              flexDirection="column"
+              flexShrink={0}
+              overflow="hidden"
+              contentOffsetY={scrollTop}
+            >
+              <Box ref={report} flexDirection="column" flexShrink={0}>
+                {renderResult(session, reportWidth)}
+              </Box>
             </Box>
+            {scrollbarText && (
+              <Box ref={scrollbar} width={1} flexShrink={0}>
+                <Text>{scrollbarText}</Text>
+              </Box>
+            )}
           </Box>
         </Box>
       </Box>
