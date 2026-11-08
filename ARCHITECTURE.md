@@ -11,7 +11,7 @@ ZMQT-Capacity estimates CPU work, resident process memory, and payload traffic f
 | Component | Function |
 | --- | --- |
 | [Library entry point](src/index.ts) | `estimateCapacity` selects profiles, calls the estimators, and assembles the result. |
-| [TUI](src/tui) | Ink and React render the form and results. Ink handles keys, and an SGR handler uses the rendered control positions for mouse input. |
+| [TUI](src/tui) | Ink and React render the terminal form and reports. |
 | [Calculation core](src/core) | Converts units and estimates traffic, CPU, queue depth, RAM, and overload. |
 | [Profiles](src/profiles) | JSON files hold CPU coefficients, RAM ranges, and model settings. |
 | [Types](src/models) and [validation](src/validation) | Define the API and check inputs, configuration versions, and numeric ranges. |
@@ -24,7 +24,7 @@ The runtime needs Node.js 24. TypeScript, Node.js types, Vitest, and fast-check 
 1. Pass the inputs to `estimateCapacity`. It validates the inputs, converts size to bytes and rate to messages per second, and checks the configuration version.
 2. Select one profile per role. Select CPU coefficients for the serialization format.
 3. Calculate total rate and payload traffic, CPU work for both roles, both queue depths, and RAM for both roles. Compare the offered rate with the subscriber capacity and add warnings.
-4. Return the result with its assumptions and versions. The TUI calls the API after each change and formats the result for the summary or detail view. The API uses unrounded values.
+4. Return the unrounded estimates, versions, warnings, and assumptions.
 
 [`CapacityResult`](src/models/result.ts) contains `{ ok: true, result }` or `{ ok: false, error }`. The error contains `code`, `field`, and `message`. The result has these sections.
 
@@ -37,7 +37,20 @@ The runtime needs Node.js 24. TypeScript, Node.js types, Vitest, and fast-check 
 | `queue` | `hwm`, `windowSeconds`, `messagesPerPeerWindow`, `messagesPerPeerFull`. |
 | `metadata` | `modelVersion`, `configVersion`, `estimationMethod` (`heuristic`), `preliminary` (`true`), `assumptions`, and machine-readable `warnings`. |
 
-The TUI runs in an interactive terminal. It displays input errors in the results panel. Exit codes are `0` for help, `2` for an invalid argument or a missing interactive terminal, and `130` for Ctrl+C.
+## Terminal UI
+
+`--help` exits with `0`. To run the form, the CLI requires a TTY on stdin and stdout. It opens Ink in the alternate screen. The CLI exits with `2` for an invalid argument or a missing TTY. Ctrl+C exits with `130`. [CLI entry point](src/tui/main.tsx).
+
+The TUI shows the panels at 80 columns and 24 rows or larger. The form takes 37 columns. The results panel fills the space to its right after a one-column gap. `App` keeps form text, focus, the report view, and scroll position in one session. When it renders the results panel, it parses numeric fields and calls `estimateCapacity`. Errors appear in Estimated results. [App](src/tui/app.tsx), [numeric parser](src/tui/parse.ts).
+
+- **Summary** lists subscriber CPU and RAM, subscriber capacity, one publisher's CPU and RAM, traffic, and normalized input. Traffic uses `msg/s`, `MB/s`, and `Mbps`.
+- **Explanations** shows model and profile versions, how the CPU and RAM scenarios are calculated, warnings, and assumptions.
+
+Tables use full labels when every label fits in `Metric`. Otherwise, the whole table uses compact labels. CPU and RAM use `Low`, `Nominal`, and `High` columns when the numeric columns and borders leave at least 10 columns for `Metric`. With less space, each metric gets a vertical scenario table. Long values wrap in their cells. [Report components](src/tui/report.tsx).
+
+When the report is taller than its viewport, a scrollbar uses the right padding column. The thumb shows the visible fraction and current offset. PgUp/PgDn and the wheel update the offset within the available scroll range. A track click jumps in proportion to its position. Input edits and view changes reset the offset.
+
+The mouse hook decodes SGR click and wheel events. `App` matches their coordinates to rendered controls. The About dialog takes input while open. [Mouse input](src/tui/mouse.ts).
 
 ## Input and units
 
@@ -213,15 +226,18 @@ The specification reference uses 300 Python publishers, one Java subscriber, JSO
 | Subscriber RAM at `Q_window`, MiB | 281.34 | 482.57 | 683.79 |
 | Subscriber RAM at `Q_full`, MiB | 604.34 | 859.40 | 1114.45 |
 
-Run `npm run typecheck` and `npm test` with Node.js 24. The test command builds the package first. The [integration test](src/tests/integration.test.ts) compares the reference RAM values after rounding to two places with a tolerance of 0.01 MiB. Use explicit, stricter tolerances for unit tests.
+`npm run build` writes the library, CLI, and type declarations to `dist/`. `npm run run` starts the built CLI. Run `npm run typecheck` and `npm test` with Node.js 24. The test command builds the package first. [Package configuration](package.json).
+
+The integration test rounds subscriber RAM estimates to two decimal places and compares them with the reference values within 0.01 MiB. Use explicit, stricter tolerances for unit tests. [Reference test](src/tests/integration.test.ts).
 
 - Check all size and rate conversions. For example, 1 KiB gives 1024 B, 1 MiB gives 1048576 B, 60 msg/min gives 1 msg/s, 1 msg/ms gives 1000 msg/s, and 0.5 msg/s gives 0.5 msg/s. Test all 12 publisher, subscriber, and format combinations at 1, 256, 1024, and 65536 B. Check CPU profile selection, time and percentage conversions, scenario factors, and use of unrounded values.
 - Check base RAM, per-connection RAM and its linear scaling, per-message RAM, and binary unit conversions. With a 1 s window and HWM 1000, `f = 0`, `0.5`, and `2000` msg/s give `Q_window = 0`, `1`, and `1000`. Check `Q_full = 1000` in all cases.
 - With fixed coefficients, more publishers cannot reduce total traffic or subscriber RAM. A higher rate cannot reduce CPU work. A larger message cannot reduce payload traffic or queue RAM. Check `low ≤ nominal ≤ high` for CPU and RAM, `Q_window ≤ HWM`, and zero CPU work at zero rate.
 - A publisher language change leaves traffic and subscriber estimates equal. A subscriber language change leaves publisher estimates equal. At the same input size, JSON and Protobuf use the same payload size.
 - Check one and many publishers, minimum and maximum byte sizes, zero and fractional rates, and numeric limits. Check structured errors for negatives, `NaN`, infinity, missing fields, unknown choices, and invalid configuration versions. Check the reference case after changes to formulas or coefficients.
+- The TUI tests cover terminal checks, input handling, report widths, scrolling by key and mouse, scrollbar visibility, and the About dialog. [TUI tests](src/tests/tui.test.tsx).
 
-The acceptance checks cover all input types, profiles, estimates, queue scenarios, warning codes, and model limitations. They run without a network or special hardware. Field measurements can calibrate the model separately.
+The tests run without a network or special hardware. Field measurements can calibrate the model separately.
 
 ## Experimental validation
 

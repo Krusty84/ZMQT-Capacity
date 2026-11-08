@@ -28,7 +28,8 @@ const warningMessages: Record<WarningCode, string> = {
   LARGE_MESSAGE_SIZE: "Large message size.",
   LARGE_PUBLISHER_COUNT: "Large publisher count.",
   POTENTIAL_PUBSUB_MESSAGE_LOSS: "PUB/SUB can lose messages.",
-  KERNEL_MEMORY_NOT_INCLUDED: "The RAM estimate excludes kernel network buffers.",
+  KERNEL_MEMORY_NOT_INCLUDED:
+    "The RAM estimate excludes kernel network buffers.",
   HWM_NOT_HARD_RSS_LIMIT: "Actual RAM use can exceed the estimate at HWM.",
 };
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 6 });
@@ -56,12 +57,22 @@ type TableProps = {
   columnWidths?: readonly number[];
 };
 
-function metricLabelVariant(rows: readonly Cells[], width: number): keyof MetricLabel {
-  const fullFits = rows.every(([label]) => typeof label === "string" || label.full.length <= width);
+function metricLabelVariant(
+  rows: readonly Cells[],
+  width: number,
+): keyof MetricLabel {
+  const fullFits = rows.every(
+    ([label]) => typeof label === "string" || label.full.length <= width,
+  );
   return fullFits ? "full" : "compact";
 }
 
-function Table({ width, rows, headers = ["Metric", "Estimate"], columnWidths }: TableProps) {
+function Table({
+  width,
+  rows,
+  headers = ["Metric", "Estimate"],
+  columnWidths,
+}: TableProps) {
   const contentWidth = width - headers.length - 1;
   const widestEstimate = rows.reduce(
     (longest, row) => Math.max(longest, row[1].length),
@@ -87,7 +98,9 @@ function Table({ width, rows, headers = ["Metric", "Estimate"], columnWidths }: 
             borderBottom={false}
             borderLeft={index === 0}
           >
-            <Text bold={bold}>{typeof cell === "string" ? cell : cell[labelVariant]}</Text>
+            <Text bold={bold}>
+              {typeof cell === "string" ? cell : cell[labelVariant]}
+            </Text>
           </Box>
         ))}
       </Box>
@@ -129,7 +142,10 @@ function processRows(estimate: CpuEstimate & MemoryEstimate, window: string) {
       formatNumber(estimate.cpuPercentHigh),
     ],
     [
-      { full: `RAM for a ${window} buffer window, MiB`, compact: `RAM ${window}, MiB` },
+      {
+        full: `RAM for a ${window} buffer window, MiB`,
+        compact: `RAM ${window}, MiB`,
+      },
       memory.format(estimate.ramWindowMiBLow),
       memory.format(estimate.ramWindowMiBNominal),
       memory.format(estimate.ramWindowMiBHigh),
@@ -148,28 +164,50 @@ export function SummaryReport({ result, width }: ReportProps) {
   const window = `${formatNumber(queue.windowSeconds)} s`;
   const trafficHeaders = ["msg/s", "MB/s", "Mbps"] as const;
   const trafficContentWidth = width - trafficHeaders.length - 1;
-  const trafficColumnWidth = Math.floor(trafficContentWidth / trafficHeaders.length);
+  const trafficColumnWidth = Math.floor(
+    trafficContentWidth / trafficHeaders.length,
+  );
   const trafficColumnWidths = [
-    trafficColumnWidth + trafficContentWidth % trafficHeaders.length,
+    trafficColumnWidth + (trafficContentWidth % trafficHeaders.length),
     trafficColumnWidth,
     trafficColumnWidth,
   ];
 
-  function renderProcess(title: string, estimate: CpuEstimate & MemoryEstimate) {
+  function renderProcess(
+    title: string,
+    estimate: CpuEstimate & MemoryEstimate,
+  ) {
     const time = `${formatNumber(estimate.cpuMicrosecondsPerMessage)} µs`;
     const rows = processRows(estimate, window);
     const valueWidths = scenarios.map((heading, index) =>
-      Math.max(heading.length, ...rows.map(([, ...values]) => values[index].length)),
+      Math.max(
+        heading.length,
+        ...rows.map(([, ...values]) => values[index].length),
+      ),
     );
-    const metricWidth = width - scenarioHeaders.length - 1 - valueWidths.reduce((total, value) => total + value, 0);
+    const metricWidth =
+      width -
+      scenarioHeaders.length -
+      1 -
+      valueWidths.reduce((total, value) => total + value, 0);
     const headingVariant = metricLabelVariant(rows, width);
 
     return (
       <Box flexDirection="column">
         <Text bold>{title}</Text>
-        <Table width={width} rows={[[{ full: "CPU time per message", compact: "CPU time/msg" }, time]]} />
+        <Table
+          width={width}
+          rows={[
+            [{ full: "CPU time per message", compact: "CPU time/msg" }, time],
+          ]}
+        />
         {metricWidth >= minMetricWidth ? (
-          <Table width={width} headers={scenarioHeaders} rows={rows} columnWidths={[metricWidth, ...valueWidths]} />
+          <Table
+            width={width}
+            headers={scenarioHeaders}
+            rows={rows}
+            columnWidths={[metricWidth, ...valueWidths]}
+          />
         ) : (
           rows.map(([metric, ...values]) => (
             <Box key={metric.full} flexDirection="column">
@@ -177,7 +215,10 @@ export function SummaryReport({ result, width }: ReportProps) {
               <Table
                 width={width}
                 headers={["Scenario", "Estimate"]}
-                rows={scenarios.map((scenario, index) => [scenario, values[index]])}
+                rows={scenarios.map((scenario, index) => [
+                  scenario,
+                  values[index],
+                ])}
               />
             </Box>
           ))
@@ -188,75 +229,100 @@ export function SummaryReport({ result, width }: ReportProps) {
 
   return (
     <Box flexDirection="column" gap={1}>
-      {renderProcess(`Subscriber — ${languages[normalizedInput.subscriberLanguage]}`, subscriber)}
+      {renderProcess(
+        `Subscriber — ${languages[normalizedInput.subscriberLanguage]}`,
+        subscriber,
+      )}
       <Box flexDirection="column">
         <Text bold>Subscriber capacity</Text>
-        <Table width={width} rows={[
-          [
-            { full: "Subscriber connections", compact: "Connections" },
-            formatNumber(subscriber.connectionCount),
-          ],
-          [
-            { full: "Queued messages per connection", compact: "Queue per peer" },
-            `${formatNumber(queue.messagesPerPeerWindow)} msg in ${window}`,
-          ],
-          [
-            { full: "Messages per connection at HWM", compact: "Queue at HWM" },
-            `${formatNumber(queue.messagesPerPeerFull)} msg/peer`,
-          ],
-          [
-            { full: "Throughput of one handler", compact: "Handler limit" },
-            `${formatNumber(subscriber.estimatedSingleThreadCapacityMsgPerSecond)} msg/s`,
-          ],
-          [
-            { full: `Unserved messages in ${window}`, compact: `Unserved in ${window}` },
-            formatNumber(subscriber.estimatedUnservedMessagesInWindow),
-          ],
-        ]} />
+        <Table
+          width={width}
+          rows={[
+            [
+              { full: "Subscriber connections", compact: "Connections" },
+              formatNumber(subscriber.connectionCount),
+            ],
+            [
+              {
+                full: "Queued messages per connection",
+                compact: "Queue per peer",
+              },
+              `${formatNumber(queue.messagesPerPeerWindow)} msg in ${window}`,
+            ],
+            [
+              {
+                full: "Messages per connection at HWM",
+                compact: "Queue at HWM",
+              },
+              `${formatNumber(queue.messagesPerPeerFull)} msg/peer`,
+            ],
+            [
+              { full: "Throughput of one handler", compact: "Handler limit" },
+              `${formatNumber(subscriber.estimatedSingleThreadCapacityMsgPerSecond)} msg/s`,
+            ],
+            [
+              {
+                full: `Unserved messages in ${window}`,
+                compact: `Unserved in ${window}`,
+              },
+              formatNumber(subscriber.estimatedUnservedMessagesInWindow),
+            ],
+          ]}
+        />
       </Box>
-      {renderProcess(`One publisher — ${languages[normalizedInput.publisherLanguage]}`, publisher)}
+      {renderProcess(
+        `One publisher — ${languages[normalizedInput.publisherLanguage]}`,
+        publisher,
+      )}
       <Box flexDirection="column">
         <Text bold>Traffic</Text>
         <Table
           width={width}
           headers={trafficHeaders}
           columnWidths={trafficColumnWidths}
-          rows={[[
-            formatNumber(traffic.totalMessagesPerSecond),
-            formatNumber(traffic.payloadMBPerSecond),
-            formatNumber(traffic.payloadMbps),
-          ]]}
+          rows={[
+            [
+              formatNumber(traffic.totalMessagesPerSecond),
+              formatNumber(traffic.payloadMBPerSecond),
+              formatNumber(traffic.payloadMbps),
+            ],
+          ]}
         />
       </Box>
-      <Text>
-        {`Input — ${formatNumber(normalizedInput.publisherCount)} publisher(s), ${formatNumber(normalizedInput.messageBytes)} B, ${formatNumber(normalizedInput.messagesPerSecondPerPublisher)} msg/s per publisher, ${normalizedInput.serialization}`}
-      </Text>
     </Box>
   );
 }
 
-export function ExplanationsReport({ metadata }: { metadata: CapacityEstimate["metadata"] }) {
+export function ExplanationsReport({
+  metadata,
+}: {
+  metadata: CapacityEstimate["metadata"];
+}) {
   return (
     <Box flexDirection="column" gap={1}>
       <Box flexDirection="column">
         <Text bold>Preliminary ZeroMQ estimate</Text>
-        <Text>{`Model ${metadata.modelVersion}, profiles ${metadata.configVersion}`}</Text>
       </Box>
       <Box flexDirection="column">
         <Text bold>Scenarios</Text>
         <Text>
-          CPU cores = msg/s × µs per message / 1,000,000.
-          Multiply by {settings.cpuOptimisticFactor} for Low, {settings.cpuNominalFactor} for Nominal,
-          and {settings.cpuConservativeFactor} for High. CPU percent = cores × 100.
+          CPU cores = msg/s × µs per message / 1,000,000. Multiply by{" "}
+          {settings.cpuOptimisticFactor} for Low, {settings.cpuNominalFactor}{" "}
+          for Nominal, and {settings.cpuConservativeFactor} for High. CPU
+          percent = cores × 100.
         </Text>
         <Text>
-          RAM adds base, connection, and queue memory using Low or High profile values.
-          At each queue depth, Nominal = (Low + High) / 2.
+          RAM adds base, connection, and queue memory using Low or High profile
+          values. At each queue depth, Nominal = (Low + High) / 2.
         </Text>
       </Box>
       <Box flexDirection="column">
         <Text bold>Warnings</Text>
-        <Text>{metadata.warnings.map((code) => `${warningMessages[code]} [${code}]`).join("\n")}</Text>
+        <Text>
+          {metadata.warnings
+            .map((code) => `${warningMessages[code]} [${code}]`)
+            .join("\n")}
+        </Text>
       </Box>
       <Box flexDirection="column">
         <Text bold>Assumptions</Text>

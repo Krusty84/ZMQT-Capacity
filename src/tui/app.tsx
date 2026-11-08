@@ -17,7 +17,7 @@ import {
   type Key,
 } from "ink";
 import { useRef, useState } from "react";
-import { estimateCapacity } from "../index.js";
+import { estimateCapacity, type CapacityResult } from "../index.js";
 import {
   frequencyUnits,
   messageSizeUnits,
@@ -26,7 +26,8 @@ import {
   subscriberLanguages,
   type CapacityInput,
 } from "../models/input.js";
-import { useMouse } from "./mouse.js";
+import { ExportDialog, type ReportExport } from "./export.js";
+import { useMouse, type MouseEvent } from "./mouse.js";
 import { numericParsers } from "./parse.js";
 import { ExplanationsReport, SummaryReport } from "./report.js";
 
@@ -79,6 +80,7 @@ const focusOrder = [
   "messageFrequency",
   "frequencyUnit",
   ...radioChoices.map(({ id }) => id),
+  "export",
   "report",
   "about",
 ];
@@ -94,6 +96,8 @@ interface Session {
   showExplanations: boolean;
   scrollTop: number;
   aboutOpen: boolean;
+  exportReport?: ReportExport;
+  reportSaved?: boolean;
 }
 
 const defaultForm: Form = {
@@ -135,7 +139,7 @@ function moveFocus(session: Session, direction: number): Session {
 }
 
 function updateForm(session: Session, change: Partial<Form>): Session {
-  return { ...session, form: { ...session.form, ...change }, scrollTop: 0 };
+  return { ...session, form: { ...session.form, ...change }, scrollTop: 0, reportSaved: false };
 }
 
 function selectOption(session: Session, field: MenuField, index: number): Session {
@@ -146,6 +150,10 @@ function selectOption(session: Session, field: MenuField, index: number): Sessio
 function activate(session: Session): Session {
   const { focus, form } = session;
   if (focus === "about") return { ...session, aboutOpen: true };
+  if (focus === "export") {
+    const exportReport = prepareExport(form);
+    return exportReport ? { ...session, exportReport, reportSaved: false } : session;
+  }
   if (focus === "report") {
     return { ...session, showExplanations: !session.showExplanations, scrollTop: 0 };
   }
@@ -183,6 +191,7 @@ function editNumber(session: Session, field: NumericField, input: string, key?: 
 }
 
 function handleKey(session: Session, input: string, key: Key): Session {
+  if (session.exportReport) return session;
   const { focus, menu } = session;
   const direction = key.upArrow ? -1 : key.downArrow ? 1 : 0;
   const confirm = key.return || input === "\r" || input === " ";
@@ -202,13 +211,34 @@ function handleKey(session: Session, input: string, key: Key): Session {
   return isNumericField(focus) ? editNumber(session, focus, input, key) : session;
 }
 
-function renderResult({ form, showExplanations }: Session, width: number) {
-  const estimate = estimateCapacity({
+function parseForm(form: Form) {
+  return {
     ...form,
     publisherCount: numericParsers.publisherCount(form.publisherCount.trim()),
     messageSize: numericParsers.messageSize(form.messageSize.trim()),
     messageFrequency: numericParsers.messageFrequency(form.messageFrequency.trim()),
-  });
+  };
+}
+
+function prepareExport(form: Form): ReportExport | undefined {
+  const input = parseForm(form);
+  const estimate = estimateCapacity(input);
+  if (!estimate.ok) return;
+
+  const { publisherCount, messageSize, messageSizeUnit, messageFrequency, frequencyUnit } = input;
+  const defaultName = `${publisherCount}_${messageSize}${messageSizeUnit}_${messageFrequency}per${choiceLabels[frequencyUnit]}.txt`;
+  const initialValues = [
+    `${numericLabels.publisherCount} ${form.publisherCount.trim()}`,
+    `${numericLabels.messageSize} ${form.messageSize.trim()} ${messageSizeUnit}`,
+    `${numericLabels.messageFrequency} ${form.messageFrequency.trim()} per ${frequencyUnit}`,
+    `Message format ${choiceLabels[form.serialization]}`,
+    `Publisher language ${choiceLabels[form.publisherLanguage]}`,
+    `Subscriber language ${choiceLabels[form.subscriberLanguage]}`,
+  ].join("\n");
+  return { defaultName, initialValues, result: estimate.result };
+}
+
+function renderResult(estimate: CapacityResult, showExplanations: boolean, width: number) {
   if (estimate.ok) {
     return showExplanations
       ? <ExplanationsReport metadata={estimate.result.metadata} />
@@ -239,6 +269,7 @@ export function App() {
   const report = useRef<DOMElement>(null);
   const scrollbar = useRef<DOMElement>(null);
   const closeAbout = useRef<DOMElement>(null);
+  const exportMouse = useRef<((event: MouseEvent) => void) | null>(null);
   const { height: reportHeight } = useBoxMetrics(report);
   const maxScroll = Math.max(0, reportHeight - pageHeight);
   const scrollTop = Math.min(session.scrollTop, maxScroll);
@@ -249,7 +280,7 @@ export function App() {
     // The layout can be ready before the metrics hook updates.
     const limit = Math.max(0, measureElement(content).height - pageHeight);
     setSession((current) => {
-      if (current.aboutOpen || limit === 0) return current;
+      if (current.aboutOpen || current.exportReport || limit === 0) return current;
       const top = Math.min(current.scrollTop, limit);
       return { ...current, scrollTop: Math.max(0, Math.min(getOffset(top, limit), limit)) };
     });
@@ -261,7 +292,7 @@ export function App() {
       exit(130);
       return;
     }
-    if (!fits || key.ctrl || key.meta || key.super || key.hyper) return;
+    if (!fits || session.exportReport || key.ctrl || key.meta || key.super || key.hyper) return;
     if (key.pageUp || key.pageDown) {
       scrollTo((top) => top + (key.pageUp ? -pageHeight : pageHeight));
       return;
@@ -274,12 +305,17 @@ export function App() {
   });
   usePaste((input) => {
     if (!fits) return;
-    setSession((current) => !current.aboutOpen && isNumericField(current.focus)
+    setSession((current) => !current.aboutOpen && !current.exportReport && isNumericField(current.focus)
       ? editNumber(current, current.focus, input.trim())
       : current);
   });
-  useMouse(({ action, x, y }) => {
+  useMouse((event) => {
     if (!fits) return;
+    if (session.exportReport) {
+      exportMouse.current?.(event);
+      return;
+    }
+    const { action, x, y } = event;
     const contains = (area: ReturnType<typeof measureElement>) =>
       x >= area.x && x < area.x + area.width &&
       y >= area.y && y < area.y + area.height;
@@ -310,7 +346,7 @@ export function App() {
       if (!contains(area)) continue;
 
       setSession((current) => {
-        if (current.aboutOpen) return current;
+        if (current.aboutOpen || current.exportReport) return current;
         if (id.startsWith(optionPrefix)) {
           return current.menu
             ? selectOption(current, current.menu.field, Number(id.slice(optionPrefix.length)))
@@ -331,10 +367,6 @@ export function App() {
     setSession((current) => current.menu ? { ...current, menu: undefined } : current);
   });
 
-  if (!fits) {
-    return <Text>Enlarge the terminal to at least 80 columns and 24 rows. Ctrl+C to exit.</Text>;
-  }
-
   // The longest option takes 33 columns including its marker.
   const formWidth = 37;
   const resultsWidth = columns - formWidth - 1;
@@ -342,7 +374,8 @@ export function App() {
   const contentWidth = formWidth - 4;
   const numberWidth = Math.floor((contentWidth - 1) / 2);
   const menuWidth = contentWidth - numberWidth - 1;
-  const marker = (id: string) => !session.aboutOpen && session.focus === id ? "> " : "  ";
+  const modalOpen = session.aboutOpen || session.exportReport !== undefined;
+  const marker = (id: string) => !modalOpen && session.focus === id ? "> " : "  ";
 
   let scrollbarText = "";
   if (maxScroll > 0) {
@@ -420,7 +453,18 @@ export function App() {
     );
   }
 
-  return (
+  const estimate = estimateCapacity(parseForm(session.form));
+  // The title and both buttons take 45 columns with their focus markers and gaps.
+  const compactHeader = reportWidth < 45;
+  const reportToggle = (
+    <Box ref={target("report")}>
+      <Text bold={session.focus === "report"}>
+        {marker("report")}[{session.showExplanations ? "Summary" : "Explanations"}]
+      </Text>
+    </Box>
+  );
+
+  const screen = fits ? (
     <Box flexDirection="column" height={rows - 1}>
       <Box height={panelHeight} flexShrink={0} gap={1}>
         <Box
@@ -454,12 +498,21 @@ export function App() {
           width={resultsWidth}
           flexShrink={0}
         >
-          <Box gap={1} height={1} marginBottom={1} paddingRight={1} flexShrink={0}>
-            <Text bold>Estimated results</Text>
-            <Box ref={target("report")}>
-              <Text bold={session.focus === "report"}>
-                {marker("report")}[{session.showExplanations ? "Summary" : "Explanations"}]
-              </Text>
+          <Box flexDirection="column" height={2} paddingRight={1} flexShrink={0}>
+            <Box justifyContent="space-between" gap={1}>
+              <Box gap={1}>
+                <Text bold>Estimated results</Text>
+                {!compactHeader && reportToggle}
+              </Box>
+              <Box ref={target("export")}>
+                <Text bold={!modalOpen && session.focus === "export"} dimColor={!estimate.ok}>
+                  {marker("export")}[Export]
+                </Text>
+              </Box>
+            </Box>
+            <Box justifyContent="space-between">
+              <Box>{compactHeader && reportToggle}</Box>
+              {session.reportSaved && <Text>Report saved</Text>}
             </Box>
           </Box>
           <Box ref={viewport} height={pageHeight} flexShrink={0}>
@@ -471,7 +524,7 @@ export function App() {
               contentOffsetY={scrollTop}
             >
               <Box ref={report} flexDirection="column" flexShrink={0}>
-                {renderResult(session, reportWidth)}
+                {renderResult(estimate, session.showExplanations, reportWidth)}
               </Box>
             </Box>
             {scrollbarText && (
@@ -487,7 +540,7 @@ export function App() {
           ↑↓ Tab Move  ←→ Edit  Enter Select  Esc Close  PgUp/PgDn  Ctrl+C Exit
         </Text>
         <Box ref={target("about")} flexShrink={0}>
-          <Text bold={!session.aboutOpen && session.focus === "about"}>
+          <Text bold={!modalOpen && session.focus === "about"}>
             {marker("about")}[About]
           </Text>
         </Box>
@@ -524,5 +577,21 @@ export function App() {
         </Box>
       )}
     </Box>
+  ) : <Text>Enlarge the terminal to at least 80 columns and 24 rows. Ctrl+C to exit.</Text>;
+
+  return (
+    <>
+      {screen}
+      {session.exportReport && (
+        <ExportDialog
+          report={session.exportReport}
+          columns={columns}
+          panelHeight={panelHeight}
+          visible={fits}
+          mouseHandler={exportMouse}
+          onClose={(saved) => setSession((current) => ({ ...current, exportReport: undefined, reportSaved: saved }))}
+        />
+      )}
+    </>
   );
 }

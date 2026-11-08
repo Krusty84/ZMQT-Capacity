@@ -4,6 +4,9 @@
  */
 
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import { tmpdir } from "node:os";
+import { join, sep } from "node:path";
 import process from "node:process";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
@@ -13,6 +16,11 @@ import { expect, test, vi } from "vitest";
 import { App } from "../tui/app.js";
 import { SummaryReport } from "../tui/report.js";
 import { calculate } from "./fixtures.js";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const fs = await importOriginal<typeof import("node:fs")>();
+  return { ...fs, writeFileSync: vi.fn(fs.writeFileSync) };
+});
 
 const bin = fileURLToPath(new URL("../../dist/tui/main.js", import.meta.url));
 
@@ -99,8 +107,8 @@ test("updates the summary from keyboard edits, unit choices and resize", async (
     await tui.waitFor("38 µs");
     expect(tui.frame.split("\n")[0]).toMatch(/^╭─{35}╮ ╭─{40}╮$/);
     expect(tui.frame).toContain("Java — Spring Boot + JeroMQ");
-    expect(tui.frame).toMatch(/Initial values[^\n]*Estimated results {3}\[Explanations\]/);
-    expect(tui.frame.split("\n")[2]).toMatch(/│ +│$/);
+    expect(tui.frame.split("\n")[1]).toMatch(/Initial values.*Estimated results +\[Export\] │$/);
+    expect(tui.frame.split("\n")[2]).toMatch(/│ {3}\[Explanations\] +│$/);
     expect(tui.frame).toMatch(/Send frequency[^\n]*\n[^\n]*\n│ Message format/);
     expect(tui.frame).toMatch(/Publisher language[^\n]*\n[^\n]*\n[^\n]*\n│ +│[^\n]*\n│ Subscriber language/);
     expect(tui.frame).toMatch(/│Metric +│ *Estimate│/);
@@ -160,8 +168,8 @@ test("uses mouse coordinates for editing, selection and report scrolling", async
     await tui.waitFor("One publisher — C++");
     tui.stdin.write(tui.mouseAt("[Explanations]"));
     await tui.waitFor("Preliminary ZeroMQ estimate");
-    expect(tui.frame).toContain("Estimated results > [Summary]");
-    expect(tui.frame).toContain("Model 1.0, profiles 1.0.0");
+    expect(tui.frame).toContain("> [Summary]");
+    expect(tui.frame).not.toMatch(/Model \S+, profiles \S+/);
     expect(tui.frame).toContain("Warnings");
     expect(tui.frame).not.toMatch(/┌|Input —/);
     expect(tui.frame.split("\n")[3]).toMatch(/█│$/);
@@ -212,13 +220,13 @@ test("moves and hides the vertical scrollbar with the report", async () => {
     tui.stdin.write("\x1b[<65;79;12M");
     await vi.waitFor(() => expect(track(18)).toMatch(/^░{7}█{5}░{6}$/));
     tui.stdin.write("\x1b[5~");
-    await vi.waitFor(() => expect(track(18)).toMatch(/^░{2}█{5}░{11}$/));
+    await vi.waitFor(() => expect(track(18)).toMatch(/^░█{5}░{12}$/));
     tui.stdin.write("\x1b[6~");
     await vi.waitFor(() => expect(track(18)).toMatch(/^░{7}█{5}░{6}$/));
 
     tui.stdin.write("\x1b[<0;79;21M");
-    await tui.waitFor("Input — 300 publisher(s)");
-    expect(track(18)).toMatch(/^░{13}█{5}$/);
+    await vi.waitFor(() => expect(track(18)).toMatch(/^░{13}█{5}$/));
+    expect(tui.frame.split("\n")[20]).toMatch(/└[─┴]+┘█│$/);
 
     tui.resize(100, 31);
     await vi.waitFor(() => expect(track(25)).toMatch(/^░{15}█{10}$/));
@@ -227,8 +235,7 @@ test("moves and hides the vertical scrollbar with the report", async () => {
     expect(track(25)).toMatch(/^█{10}░{15}$/);
 
     tui.resize(100, 66);
-    await tui.waitFor("Input — 300 publisher(s)");
-    expect(track(60)).toMatch(/^ {60}$/);
+    await vi.waitFor(() => expect(track(60)).toMatch(/^ {60}$/));
   } finally {
     await tui.close();
   }
@@ -237,6 +244,7 @@ test("moves and hides the vertical scrollbar with the report", async () => {
 test("adapts the scenario tables to the terminal and scrolls through the report", async () => {
   const tui = renderTui();
   const compactCores = /│CPU, cores +│ +0\.114│ +0\.228│ +0\.684│/;
+  const traffic = /│6,000 +│ +6\.144│ +49\.152│/;
   try {
     await tui.waitFor("38 µs");
     expect(tui.frame).toMatch(compactCores);
@@ -255,12 +263,11 @@ test("adapts the scenario tables to the terminal and scrolls through the report"
     await vi.waitFor(() => expect(tui.frame).toMatch(/│CPU, cores +│0\.0005│ +0\.001│ +0\.003│/));
 
     tui.stdin.write("\x1b[6~");
-    await tui.waitFor("Input — 300 publisher(s)");
-    expect(tui.frame).toMatch(/│6,000 +│ +6\.144│ +49\.152│/);
+    await vi.waitFor(() => expect(tui.frame).toMatch(traffic));
 
     tui.resize(100, 31);
     await vi.waitFor(() => expect(tui.frame.split("\n")[0]).toMatch(/^╭─{35}╮ ╭─{60}╮$/));
-    expect(tui.frame).toMatch(/│6,000 +│ +6\.144│ +49\.152│/);
+    expect(tui.frame).toMatch(traffic);
 
     tui.stdin.write("1");
     await tui.waitFor("2.28076│");
@@ -318,8 +325,7 @@ test("shows the full estimate once in bordered tables at three widths", () => {
     for (const value of ["50 µs", "38 µs", "20 msg in 1 s", "1,000 msg/peer", "26,315.789474 msg/s"]) {
       expect(report.split(value)).toHaveLength(2);
     }
-    expect(report.slice(report.lastIndexOf("┘") + 1).replace(/\s+/g, " ").trim())
-      .toBe("Input — 300 publisher(s), 1,024 B, 20 msg/s per publisher, json");
+    expect(report.slice(report.lastIndexOf("┘") + 1).trim()).toBe("");
   }
 });
 
@@ -392,7 +398,7 @@ test("centers the About dialog and isolates its input", async () => {
     await tui.waitFor("Preliminary ZeroMQ estimate");
     tui.stdin.write("\x1b[6~");
     await vi.waitFor(() => expect(tui.frame).not.toContain("Preliminary ZeroMQ estimate"));
-    const previousBody = tui.frame.split("\n").slice(2, 22);
+    const previousBody = tui.frame.split("\n").slice(3, 22);
 
     tui.stdin.write("\t\r");
     await tui.waitFor("> [Close]");
@@ -420,7 +426,7 @@ test("centers the About dialog and isolates its input", async () => {
     tui.stdin.write("\x1b");
     await tui.waitFor("> [About]");
     expect(tui.frame).toContain("[Summary]");
-    expect(tui.frame.split("\n").slice(2, 22)).toEqual(previousBody);
+    expect(tui.frame.split("\n").slice(3, 22)).toEqual(previousBody);
 
     tui.stdin.write(tui.mouseAt("[About]"));
     await tui.waitFor("> [Close]");
@@ -433,5 +439,143 @@ test("centers the About dialog and isolates its input", async () => {
     await tui.waitFor("> [About]");
   } finally {
     await tui.close();
+  }
+});
+
+test("exports both report sections and the current inputs to a selected folder", async () => {
+  const workingDirectory = process.cwd();
+  const directory = fs.mkdtempSync(join(tmpdir(), "zmqt-export-"));
+  const reports = join(directory, "reports");
+  fs.mkdirSync(reports);
+  const tui = renderTui();
+  try {
+    process.chdir(directory);
+    await tui.waitFor("38 µs");
+    tui.stdin.write("1\x1b[B\x7f\x1b[200~0,5\x1b[201~");
+    await tui.waitFor("29 µs");
+    tui.stdin.write(tui.mouseAt("Period"));
+    await tui.waitFor("Second ▴");
+    tui.stdin.write(tui.mouseAt("Minute"));
+    await tui.waitFor("Minute ▾");
+    tui.stdin.write(tui.mouseAt("[Explanations]"));
+    await tui.waitFor("Preliminary ZeroMQ estimate");
+
+    tui.stdin.write("\x1b[Z\r"); // Shift+Tab from the view toggle to Export, then open it.
+    await tui.waitFor("Export report");
+    const defaultName = "3001_0.5KiB_20perMinute.txt";
+    expect(tui.frame).toContain(defaultName);
+    tui.stdin.write("\x1b[B\r");
+    await tui.waitFor(`${sep}reports`);
+    tui.stdin.write("\t\x1b[H\x1b[200~Обзор \x1b[201~");
+    const filename = `Обзор ${defaultName}`;
+    await tui.waitFor(filename);
+
+    tui.resize(79, 23);
+    await tui.waitFor("Enlarge the terminal");
+    tui.resize(80, 24);
+    await tui.waitFor(filename);
+    expect(tui.frame).toContain(`${sep}reports`);
+
+    const time = new Date(2026, 10, 8, 17, 4, 32);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(time);
+    tui.stdin.write(tui.mouseAt("[Ok]"));
+    await tui.waitFor("Report saved");
+    vi.useRealTimers();
+    expect(tui.frame).toContain("Preliminary ZeroMQ estimate");
+    expect(tui.frame).not.toContain("Export report");
+
+    const report = fs.readFileSync(join(reports, filename), "utf8");
+    expect(report.match(/^(Report time .*|Initial Values|Estimated results|===|Explanations)$/gm)).toEqual([
+      `Report time ${time.toLocaleString()}`, "Initial Values", "Estimated results", "===", "Explanations",
+    ]);
+    expect(report).toContain([
+      "Publisher count 3001", "Message size 0,5 KiB", "Send frequency 20 per minute", "Message format JSON",
+      "Publisher language Python — PyZMQ", "Subscriber language Java — Spring Boot + JeroMQ",
+    ].join("\n"));
+    expect(report).toContain("Subscriber capacity");
+    expect(report).toContain("One publisher — Python");
+    expect(report).not.toContain("Input —");
+    expect(report).toContain("Warnings");
+    expect(report).toContain("Assumptions");
+    expect(report).toContain("hard real-time use.");
+    expect(report).toBe(stripVTControlCharacters(report));
+    expect(fs.readdirSync(directory)).toEqual(["reports"]);
+  } finally {
+    vi.useRealTimers();
+    await tui.close();
+    process.chdir(workingDirectory);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("cancels export, blocks invalid estimates and preserves an existing file", async () => {
+  const workingDirectory = process.cwd();
+  const directory = fs.mkdtempSync(join(tmpdir(), "zmqt-export-"));
+  const tui = renderTui();
+  try {
+    process.chdir(directory);
+    await tui.waitFor("38 µs");
+    tui.stdin.write(tui.mouseAt("[Export]"));
+    await tui.waitFor("Export report");
+    tui.stdin.write(tui.mouseAt("[Cancel]"));
+    await tui.waitFor("> [Export]");
+    tui.stdin.write("\r");
+    await tui.waitFor("Export report");
+    tui.stdin.write("\x1b");
+    await tui.waitFor("> [Export]");
+    expect(fs.readdirSync(directory)).toEqual([]);
+
+    tui.stdin.write(tui.mouseAt("Message size") + "\x7f");
+    await tui.waitFor("Expected a positive finite number.");
+    tui.stdin.write(tui.mouseAt("[Export]"));
+    await tui.waitFor("> [Export]");
+    expect(tui.frame).not.toContain("Export report");
+
+    const filename = "300_1KiB_20perSecond.txt";
+    const path = join(directory, filename);
+    fs.writeFileSync(path, "Existing report\n", "utf8");
+    tui.stdin.write(tui.mouseAt("Message size     Size unit") + "1");
+    await tui.waitFor("38 µs");
+    tui.stdin.write(tui.mouseAt("[Export]"));
+    await tui.waitFor(filename);
+    tui.stdin.write("\x1b[Z\r"); // Shift+Tab from the folder list to Ok, then save.
+    await tui.waitFor("File already exists. Change the file name.");
+    expect(tui.frame).toContain("Export report");
+    expect(tui.frame).toContain(filename);
+    expect(fs.readFileSync(path, "utf8")).toBe("Existing report\n");
+  } finally {
+    await tui.close();
+    process.chdir(workingDirectory);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("removes a partial report after a write failure and permits a retry", async () => {
+  const workingDirectory = process.cwd();
+  const directory = fs.mkdtempSync(join(tmpdir(), "zmqt-export-"));
+  const tui = renderTui();
+  const { writeFileSync } = await vi.importActual<typeof fs>("node:fs");
+  const write = vi.mocked(fs.writeFileSync).mockImplementationOnce((file) => {
+    writeFileSync(file, "Partial report", "utf8");
+    throw Object.assign(new Error("No space left on device"), { code: "ENOSPC" });
+  });
+  try {
+    process.chdir(directory);
+    await tui.waitFor("38 µs");
+    tui.stdin.write(tui.mouseAt("[Export]"));
+    await tui.waitFor("Export report");
+    tui.stdin.write(tui.mouseAt("[Ok]"));
+    await tui.waitFor("Cannot save report (ENOSPC).");
+    expect(fs.readdirSync(directory)).toEqual([]);
+
+    tui.stdin.write("\r");
+    await tui.waitFor("Report saved");
+    expect(fs.readdirSync(directory)).toEqual(["300_1KiB_20perSecond.txt"]);
+  } finally {
+    write.mockReset();
+    await tui.close();
+    process.chdir(workingDirectory);
+    fs.rmSync(directory, { recursive: true, force: true });
   }
 });
