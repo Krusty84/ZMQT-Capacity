@@ -28,9 +28,5 @@ Requires Node.js 24. The tool runs offline after setup.
 Run these commands in the project folder.
 
 ```sh
-npm ci
-npm run build
-npm start
+npm run start
 ```
-
-After you install the built npm package, run `zmqt-capacity`. Use an interactive terminal with at least 80 columns and 24 rows. For help, run `zmqt-capacity --help`.
