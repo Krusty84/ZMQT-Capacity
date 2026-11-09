@@ -28,7 +28,8 @@ Requires Node.js 24. The tool runs offline after setup.
 Run these commands in the project folder.
 
 ```sh
-curl -o- https://githubusercontent.com | bash (or, for windows: nvm-setup.exe , https://github.com/nvm-windows/nvm/releases/tag/v2.0.0)
+curl -o- https://githubusercontent.com | bash 
+or, for Windows: install nvm-setup.exe , get it from: https://github.com/nvm-windows/nvm/releases/tag/v2.0.0
 nvm install 24
 nvm use 24
 npm run build
