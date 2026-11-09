@@ -28,5 +28,6 @@ Requires Node.js 24. The tool runs offline after setup.
 Run these commands in the project folder.
 
 ```sh
+npm run build
 npm run start
 ```
